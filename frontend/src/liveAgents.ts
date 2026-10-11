@@ -25,16 +25,8 @@ export function collectLiveActivity(s: SentinelState): LiveActivity[] {
     out.push({ id: cfg.id, title: cfg.title, state: slot.state, status: slot.status, seesPreview: preview })
   }
 
-  const proc = s.procedure
-  if (proc.state === 'thinking') {
-    const preview = proc.sees?.length
-      ? proc.sees.slice(0, 2).map((x) => x.text).join(' · ')
-      : null
-    out.push({ id: 'procedure', title: 'The Attending', state: 'thinking', status: proc.status, seesPreview: preview })
-  }
-
   const d = s.deliberation
-  if (d.status && d.status !== 'idle' && d.status !== 'done' && !d.outcome) {
+  if ((s.event?.context_status === 'pending' || /round/i.test(d.status)) && d.outcome !== 'converged' && d.outcome !== 'split') {
     out.push({
       id: 'deliberation',
       title: 'Team deliberation',

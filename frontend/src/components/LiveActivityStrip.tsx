@@ -1,7 +1,7 @@
 import { collectLiveActivity, type LiveActivity } from '../liveAgents'
 import type { SentinelState } from '../types'
 
-function Row({ item, clock }: { item: LiveActivity; clock: number }) {
+function Row({ item }: { item: LiveActivity }) {
   return (
     <div className={`ag-live-chip state-${item.state}`}>
       <span className="ag-live-dot" />
@@ -23,7 +23,7 @@ export default function LiveActivityStrip({ s }: { s: SentinelState }) {
       <span className="mono muted">t {s.clock_s.toFixed(1)} s</span>
       <div className="ag-live-chips">
         {items.map((item) => (
-          <Row key={item.id} item={item} clock={s.clock_s} />
+          <Row key={item.id} item={item} />
         ))}
       </div>
     </section>
