@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fmt, getJson, postControl, useSentinelState } from '../api'
 import type { ScenarioSummary } from '../types'
+import AppNav from '../components/AppNav'
 
 const PHASES = [
   'Preparation', 'CalotTriangleDissection', 'ClippingCutting', 'GallbladderDissection',
@@ -24,6 +25,7 @@ export default function Control() {
 
   return (
     <div className="control">
+      <AppNav />
       <h1>Presenter control</h1>
       <div className="secondary" style={{ fontSize: 20 }}>
         {s ? (

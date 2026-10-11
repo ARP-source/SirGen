@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getJson, postJson, useSentinelState } from '../api'
 import type { ReportSummary } from '../types'
+import AppNav from '../components/AppNav'
 
 export default function PostOp() {
   const { state: s } = useSentinelState()
@@ -28,6 +29,7 @@ export default function PostOp() {
 
   return (
     <div className="postop">
+      <AppNav />
       <header>
         <h1>Post-op report draft</h1>
         <button className="big primary" onClick={generate} disabled={busy}>

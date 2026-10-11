@@ -8,6 +8,7 @@ import ActionsTimeline from '../components/ActionsTimeline'
 import CommunicationPanel from '../components/CommunicationPanel'
 import PlaneLayer, { usePlaneLayer } from '../components/PlaneLayer'
 import { CATEGORY_LABEL } from '../components/Agents'
+import AppNav from '../components/AppNav'
 import SourceChip from '../components/SourceChip'
 
 const HISTORY = 60
@@ -307,6 +308,7 @@ export default function AgentsPage() {
   if (!s) {
     return (
       <div className="agents-page">
+        <AppNav />
         <header className="ag-header">
           <div className="ag-brand"><b>SWARM</b> <span>AGENTS</span></div>
           <div className="ag-right"><span className="ag-pill tone-idle"><i className="ag-dot" />{link.toUpperCase()}</span></div>
@@ -323,6 +325,7 @@ export default function AgentsPage() {
 
   return (
     <div className={`agents-page${commOpen ? ' ag-comm-open' : ''}`}>
+      <AppNav />
       <PlaneLayer layerRef={layerRef} />
       {commOpen && <CommunicationPanel rows={auditRows} onClose={() => setCommOpen(false)} />}
       <header className="ag-header">

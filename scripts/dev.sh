@@ -12,5 +12,5 @@ BACK=$!
 FRONT=$!
 trap 'kill $BACK $FRONT 2>/dev/null; wait 2>/dev/null' INT TERM EXIT
 echo "backend  http://localhost:7000/health"
-echo "screens  http://localhost:5173/surgical  http://localhost:5173/dashboard  http://localhost:5173/control"
+echo "screens  http://localhost:5173/surgical  http://localhost:5173/agents  http://localhost:5173/dashboard  http://localhost:5173/control"
 wait

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useSentinelState } from '../api'
 
 const n = (v: number | null | undefined) => (v == null ? '--' : String(Math.round(v)))
@@ -159,6 +160,8 @@ export default function Surgical() {
         </div>
       )}
       {link !== 'live' && <div className="hud-fault">state link {link}</div>}
+
+      <Link to="/agents" className="hud-swarm-link">Swarm agents</Link>
 
       <div className="hud-foot">
         {state?.labels.footage ?? 'Recorded footage · Research prototype'}

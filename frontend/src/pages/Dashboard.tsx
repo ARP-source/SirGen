@@ -6,7 +6,9 @@ import PatientChart from '../components/PatientChart'
 import { ProvenanceBadge } from '../components/Badges'
 import AuditPanel from '../components/AuditPanel'
 import { AgentColumns, DeliberationPanel } from '../components/Agents'
+import AppNav from '../components/AppNav'
 import SimpleBoard from '../components/SimpleBoard'
+import { Link } from 'react-router-dom'
 
 const NM = <span className="nm">not measured</span>
 
@@ -129,6 +131,12 @@ export default function Dashboard() {
 
   return (
     <div className="dash">
+      <AppNav />
+      <Link to="/agents" className="swarm-banner">
+        <span className="swarm-banner-k">SWARM AGENTS</span>
+        <span>Eight parallel agents (vision, attending, three deliberation agents, safety officer, gate, archivist) — 3D cards, paper planes, audit timeline. This page is the old three-agent summary.</span>
+        <span className="swarm-banner-go">Open swarm view →</span>
+      </Link>
       <header>
         <h1>Sentinel-OR · how it thinks</h1>
         <span className="scenario">
