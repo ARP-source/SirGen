@@ -1,5 +1,6 @@
 import type { AgentSlot, SentinelState } from '../types'
 import type { AgentCardConfig, AgentKind } from '../agentsRoster'
+import AgentIcon3D from './AgentIcon3D'
 
 /* ---------- live status, derived from state only ---------- */
 
@@ -124,99 +125,6 @@ export function Sparkline({ values, label }: { values: number[]; label: string }
   )
 }
 
-/* ---------- inline SVG line icons ---------- */
-
-function Icon({ id }: { id: string }) {
-  const p = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
-  switch (id) {
-    case 'vision': // camera lens
-      return (
-        <svg viewBox="0 0 96 96" {...p}>
-          <circle cx="48" cy="48" r="36" />
-          <circle cx="48" cy="48" r="26" strokeWidth="1.2" opacity="0.6" />
-          <circle cx="48" cy="48" r="15" />
-          <circle cx="48" cy="48" r="6" fill="currentColor" stroke="none" opacity="0.85" />
-          <path d="M33 33 L41 41 M63 33 L55 41 M33 63 L41 55 M63 63 L55 55" opacity="0.6" />
-          <path d="M40 18 Q48 14 56 18" opacity="0.5" />
-        </svg>
-      )
-    case 'procedure': // steps joined in sequence
-      return (
-        <svg viewBox="0 0 96 96" {...p}>
-          <rect x="14" y="14" width="24" height="18" rx="4" />
-          <rect x="58" y="39" width="24" height="18" rx="4" />
-          <rect x="14" y="64" width="24" height="18" rx="4" />
-          <path d="M38 23 H48 Q52 23 52 27 V44 Q52 48 56 48 H58" />
-          <path d="M58 48 H56 Q52 48 52 52 V69 Q52 73 48 73 H38" />
-          <path d="M20 23 H32 M64 48 H76 M20 73 H32" opacity="0.6" />
-          <path d="M86 20 v10 M81 25 h10" opacity="0.6" />
-        </svg>
-      )
-    case 'surgical': // grasper / forceps
-      return (
-        <svg viewBox="0 0 96 96" {...p}>
-          <path d="M18 78 L58 38" />
-          <path d="M78 18 L58 38 L66 30" />
-          <path d="M18 78 L30 66" opacity="0.5" />
-          <circle cx="18" cy="78" r="6" />
-          <path d="M24 84 L48 60" opacity="0.7" />
-          <path d="M60 36 L76 20" opacity="0.6" />
-          <path d="M80 42 L70 32" opacity="0.6" />
-          <path d="M14 46 Q24 36 34 46 Q44 56 54 46" opacity="0.35" strokeWidth="1.2" />
-        </svg>
-      )
-    case 'anesthesia': // heart with trace
-      return (
-        <svg viewBox="0 0 96 96" {...p}>
-          <path d="M48 82 C20 62 10 46 16 32 C21 20 38 18 48 32 C58 18 75 20 80 32 C86 46 76 62 48 82 Z" />
-          <path d="M20 52 H34 L40 40 L48 64 L54 46 L58 52 H76" />
-        </svg>
-      )
-    case 'record': // chart document
-      return (
-        <svg viewBox="0 0 96 96" {...p}>
-          <path d="M26 12 H58 L72 26 V84 H26 Z" />
-          <path d="M58 12 V26 H72" />
-          <path d="M36 42 H62 M36 52 H62 M36 62 H54" opacity="0.7" />
-          <path d="M36 32 H46" />
-          <path d="M60 70 l3 3 l6 -7" />
-        </svg>
-      )
-    case 'safety': // shield with check
-      return (
-        <svg viewBox="0 0 96 96" {...p}>
-          <path d="M48 12 L78 22 V46 C78 64 66 76 48 84 C30 76 18 64 18 46 V22 Z" />
-          <path d="M36 48 L45 57 L62 38" />
-          <path d="M48 12 V84" opacity="0.2" strokeWidth="1" />
-        </svg>
-      )
-    case 'gate': // speech bubble on hold
-      return (
-        <svg viewBox="0 0 96 96" {...p}>
-          <path d="M18 20 H78 Q84 20 84 26 V58 Q84 64 78 64 H44 L28 78 V64 H18 Q12 64 12 58 V26 Q12 20 18 20 Z" />
-          <path d="M41 32 V52 M55 32 V52" strokeWidth="3" />
-          <path d="M22 70 H30" opacity="0.4" />
-        </svg>
-      )
-    case 'archivist': // folder with chained pages
-      return (
-        <svg viewBox="0 0 96 96" {...p}>
-          <path d="M12 30 V76 Q12 82 18 82 H78 Q84 82 84 76 V38 Q84 32 78 32 H48 L40 24 H18 Q12 24 12 30 Z" />
-          <path d="M34 46 H62 M34 56 H62 M34 66 H52" opacity="0.7" />
-          <path d="M62 62 a5 5 0 0 1 7 0 l5 5 a5 5 0 0 1 -7 7 l-2 -2" opacity="0.8" />
-          <path d="M72 72 a5 5 0 0 1 -7 0 l-5 -5 a5 5 0 0 1 7 -7 l2 2" opacity="0.8" />
-        </svg>
-      )
-    default:
-      return (
-        <svg viewBox="0 0 96 96" {...p}>
-          <circle cx="48" cy="48" r="30" />
-          <path d="M48 30 V52 M48 62 V64" />
-        </svg>
-      )
-  }
-}
-
 /* ---------- card ---------- */
 
 export default function AgentCard({
@@ -247,14 +155,7 @@ export default function AgentCard({
         <div className="ag-sub">{cfg.subtitle}</div>
       </div>
       <div className="ag-icon">
-        <div className="ag-3d">
-          <div className="ag-obj">
-            <div className="ag-layer back"><Icon id={cfg.id} /></div>
-            <div className="ag-layer mid"><Icon id={cfg.id} /></div>
-            <div className="ag-layer front"><Icon id={cfg.id} /></div>
-          </div>
-          <i className="ag-shadow" />
-        </div>
+        <AgentIcon3D id={cfg.id} tone={st.tone} />
         {thinking && (
           <div className="ag-paper" title="writing a message" aria-hidden="true">
             <i /><i /><i /><i />

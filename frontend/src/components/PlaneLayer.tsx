@@ -17,14 +17,14 @@ const reducedMotion = (): boolean =>
 /** Where a message is written on a card: the paper, if it is showing, else the icon area, else the card centre. */
 function originOf(card: HTMLElement): { x: number; y: number } {
   const paper = card.querySelector<HTMLElement>('.ag-paper')
-  const icon = card.querySelector<HTMLElement>('.ag-icon')
+  const icon = card.querySelector<HTMLElement>('.ag-icon-stage') ?? card.querySelector<HTMLElement>('.ag-icon')
   const r = (paper ?? icon ?? card).getBoundingClientRect()
   if (paper) return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
   return { x: r.left + r.width * 0.78, y: r.top + r.height * 0.78 }
 }
 
 function targetOf(card: HTMLElement): { x: number; y: number } {
-  const icon = card.querySelector<HTMLElement>('.ag-icon')
+  const icon = card.querySelector<HTMLElement>('.ag-icon-stage') ?? card.querySelector<HTMLElement>('.ag-icon')
   const r = (icon ?? card).getBoundingClientRect()
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
 }
