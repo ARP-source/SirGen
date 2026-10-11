@@ -232,6 +232,8 @@ export interface SentinelState {
   }
   audit: AuditInfo
   gate: {
+    emergency?: boolean
+    emergency_text?: string | null
     status: 'hold' | 'open'
     settling: boolean
     instrument: string | null
