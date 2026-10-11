@@ -21,7 +21,8 @@ Entry fields (hashed, canonical JSON, sorted keys):
   prev_hash, hash (hash = sha256 of the entry without "hash").
 Kinds: session_start, run_start, control, alert, baseline_alarm, drug_given, nibp_reading,
 phase_change, agent_message, agent_unavailable, deliberation_result, metrics_snapshot (the measured numbers at
-the end of each deliberation, for the pitch), voice_qa, segment_end, report_generated.
+the end of each deliberation, for the pitch), voice_qa, segment_end, report_generated,
+speech_held, speech_released, speech_spoken, speech_urgent.
 """
 from __future__ import annotations
 
@@ -42,6 +43,7 @@ KINDS = (
     "session_start", "run_start", "control", "alert", "baseline_alarm", "drug_given", "nibp_reading",
     "phase_change", "agent_message", "agent_unavailable", "deliberation_result", "voice_qa",
     "segment_end", "report_generated", "metrics_snapshot",
+    "speech_held", "speech_released", "speech_spoken", "speech_urgent",
 )
 
 

@@ -4,7 +4,7 @@ How to use: open a **new Agent chat** for each step (so old context doesn't pile
 
 ---
 
-## [ ] Step 0: check where things stand (do this first, every time you switch to Cursor)
+## [x] Step 0: check where things stand (do this first, every time you switch to Cursor)
 
 ```
 Read AGENTS.md, HANDOFF.md and CLAUDE.md. Then check the real state of the GX10 without changing anything yet:
@@ -35,7 +35,7 @@ Tell me plainly what works on the real model and what does not.
 
 ---
 
-## [ ] Step 1b: speak-or-hold + simple screen 2 (judge advice)
+## [x] Step 1b: speak-or-hold + simple screen 2 (judge advice)
 
 Use this only if the patch from the Claude project never arrives.
 

@@ -44,7 +44,16 @@ export default function Control() {
         <button className="big" onClick={run('restart')}>Restart</button>
         <button className="big" onClick={run('reset')}>Reset</button>
         <button className="big trigger" onClick={run('trigger')}>Trigger alert</button>
+        <button className="big primary" onClick={run('surgeon-asks')}>Surgeon asks</button>
       </div>
+      {s?.gate && (
+        <div className="secondary" style={{ marginTop: 8 }}>
+          <span className={`gate-chip ${s.gate.status}`}>{s.gate.chip}</span>
+          {' '}{s.gate.basis}
+          {s.gate.tools.length > 0 ? ` · now: ${s.gate.tools.join(', ')}` : ' · no instrument'}
+          {s.speech.queued.length > 0 ? ` · ${s.speech.queued.length} held` : ''}
+        </div>
+      )}
 
       <h2 style={{ fontSize: 18 }} className="muted">Scenario</h2>
       <div className="scenarios">

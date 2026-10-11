@@ -12,6 +12,7 @@ import time
 from typing import Optional, Protocol
 
 from .audit import AuditLog
+from .gate import SpeechGate, tools_at
 from .scenario import Scenario
 from .state import (
     AGENTS_NOT_ATTACHED, Baseline, DrugEntry, Event, NibpEntry, ScenarioInfo, StateStore,
@@ -80,6 +81,7 @@ class ScenarioPlayer:
         self._event_seq = 0
         self.listener: Optional[EventListener] = None
         self.audit: Optional[AuditLog] = None  # attached by attach_audit(); None in unit tests
+        self.gate = SpeechGate(log=self._log)
         self._logged_sources: set[str] = set()
         self.scenario = scenarios[initial] if initial in scenarios else next(iter(scenarios.values()))
         self._reset_run()
@@ -139,6 +141,17 @@ class ScenarioPlayer:
         self._log("control", "trigger alert now", {"action": "trigger"}, actor="presenter")
         return self._fire("presenter", self.clock, detected_at=time.perf_counter())
 
+    def surgeon_asks(self) -> None:
+        """Release held speech even while a hold instrument is in use."""
+        self._log("control", "surgeon asks", {"action": "surgeon-asks"}, actor="presenter")
+        self.gate.surgeon_asks()
+        self._sync(urgent=True)
+
+    def offer_speech(self, text: str, kind: str = "team_question", urgent: bool = False) -> None:
+        """Queue or speak a non-banner message. The visual alert never goes through here."""
+        self.gate.offer(text, kind=kind, urgent=urgent)  # type: ignore[arg-type]
+        self.store.update(urgent=True, gate=self.gate.view(), speech=self.gate.speech_view())
+
     # ---- clock ----------------------------------------------------------------
     def tick(self, dt: float) -> None:
         """Advance the clock by dt seconds (if playing) and process what happened."""
@@ -185,6 +198,7 @@ class ScenarioPlayer:
     def _reset_run(self) -> None:
         if self.listener is not None:
             self.listener.on_reset()  # cancels a running deliberation, clears agents/deliberation
+        self.gate.reset()
         self.clock = 0.0
         self.playing = False
         self.ended = False
@@ -276,10 +290,14 @@ class ScenarioPlayer:
             self._add_timeline("info", info)
         drugs, nibp = self._visible_drugs(), self._visible_nibp()
         self._log_new_sources(drugs, nibp)
+        vitals = self._vitals()
+        tools, basis = tools_at(self.scenario.raw, self.clock, live_tools=self.gate.live_tools)
+        self.gate.on_clock(self.clock, tools, basis, map_=vitals.map, spo2=vitals.spo2)
         return self.store.update(
             urgent=urgent, clock_s=round(self.clock, 2), playing=self.playing, ended=self.ended,
-            vitals=self._vitals(), drug_log=drugs, nibp=nibp,
+            vitals=vitals, drug_log=drugs, nibp=nibp,
             baseline=self._baseline_state(), event=self._event, timeline=list(self._timeline),
+            gate=self.gate.view(), speech=self.gate.speech_view(),
         )
 
     def _alert_text(self) -> str:

@@ -223,6 +223,41 @@ export interface SentinelState {
     context_unavailable: string
   }
   audit: AuditInfo
+  gate: {
+    status: 'hold' | 'open'
+    settling: boolean
+    instrument: string | null
+    tools: string[]
+    basis: string
+    settle_remaining_s: number
+    chip: string
+    thresholds_note: string
+  }
+  speech: {
+    queued: Array<{
+      id: string
+      text: string
+      kind: string
+      urgent: boolean
+      created_t: number
+      spoken_t: number | null
+      held_s: number | null
+      release_reason: string | null
+    }>
+    current: {
+      id: string
+      text: string
+      kind: string
+      urgent: boolean
+      created_t: number
+      spoken_t: number | null
+      held_s: number | null
+      release_reason: string | null
+    } | null
+    caption: string | null
+    held_s: number | null
+    release_reason: string | null
+  }
 }
 
 export interface ScenarioSummary {

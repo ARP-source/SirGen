@@ -42,6 +42,13 @@
     {"source_id": "drug-02", "t_s": -1500, "drug": "remifentanil", "detail": "TCI running, target 4.0 ng/mL", "provenance": "simulated"},
     {"source_id": "drug-03", "t_s": -25, "drug": "propofol", "detail": "TCI target increased 2.8 to 3.2 mcg/mL (rate increase)", "provenance": "simulated"}
   ],
+  "instrument_timeline": [
+    {"t_s": 0,  "tools": ["Grasper"]},
+    {"t_s": 5,  "tools": ["Grasper", "Clipper"]},
+    {"t_s": 25, "tools": ["Grasper", "Scissors"]},
+    {"t_s": 45, "tools": ["Grasper", "Irrigator"]},
+    {"t_s": 95, "tools": ["Irrigator", "Bipolar"]}
+  ],
   "surgical_events": [
     {"source_id": "surg-01", "t_s": 5,  "event": "Clip applier in view; clips applied", "tools": ["Grasper", "Clipper"], "provenance": "real footage; detector output"},
     {"source_id": "surg-02", "t_s": 25, "event": "Scissors in view; structure divided", "tools": ["Grasper", "Scissors"], "provenance": "real footage; detector output"},

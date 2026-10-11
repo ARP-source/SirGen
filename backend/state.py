@@ -16,6 +16,8 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from .gate import GateView, SpeechView
+
 log = logging.getLogger("sentinel.state")
 
 ATTRIBUTION = (
@@ -247,6 +249,8 @@ class SentinelState(BaseModel):
     video: VideoInfo = Field(default_factory=VideoInfo)
     labels: Labels = Field(default_factory=Labels)
     audit: AuditInfo = Field(default_factory=AuditInfo)
+    gate: GateView = Field(default_factory=GateView)
+    speech: SpeechView = Field(default_factory=SpeechView)
 
 
 class StateStore:

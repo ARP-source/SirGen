@@ -145,7 +145,8 @@ def services(request: Request | WebSocket) -> Services:
 async def health(request: Request) -> dict[str, Any]:
     svc = services(request)
     st = svc.store.state
-    return {"status": "ok", "milestone": "M4a", "scenario_id": st.scenario_id, "clock_s": st.clock_s,
+    return {"status": "ok", "milestone": "M4a", "speak_or_hold": True,
+            "scenario_id": st.scenario_id, "clock_s": st.clock_s,
             "playing": st.playing, "ws_clients": svc.store.subscriber_count,
             "video": svc.video.stats(), "agents": svc.orchestrator.status,
             "lightning": {"url": svc.orchestrator.client.base_url, "model": svc.orchestrator.client.model,
@@ -285,6 +286,14 @@ async def control_scenario(scenario_id: str, request: Request) -> dict[str, Any]
         raise HTTPException(404, f"unknown scenario {scenario_id}")
     svc.player.select(scenario_id)
     svc.store.update(phase=PhaseState())
+    return _ack(svc)
+
+
+@app.post("/control/surgeon-asks")
+async def control_surgeon_asks(request: Request) -> dict[str, Any]:
+    """Release held speech now (judge beat: the surgeon asked). Banner is never held."""
+    svc = services(request)
+    svc.player.surgeon_asks()
     return _ack(svc)
 
 

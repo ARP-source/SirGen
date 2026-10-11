@@ -22,7 +22,8 @@ def test_alert_fires_and_unreachable_lightning_is_shown_as_unavailable(monkeypat
     from backend.app import app
     with TestClient(app) as client:
         h = client.get("/health").json()
-        assert h["milestone"] == "M4a" and h["lightning"]["url"] == "http://127.0.0.1:9/v1" and h["agents"] == "idle"
+        assert h["milestone"] == "M4a" and h["speak_or_hold"] is True
+        assert h["lightning"]["url"] == "http://127.0.0.1:9/v1" and h["agents"] == "idle"
         client.post("/control/scenario/drug_effect")
         ev = client.post("/control/trigger").json()["event"]
         assert ev["alert_text"].startswith("SIMULATED") or ev["alert_text"].startswith("TELEMETRY")

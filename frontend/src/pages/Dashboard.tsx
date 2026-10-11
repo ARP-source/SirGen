@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { fmt, fmtT, useSentinelState } from '../api'
 import type { SentinelState } from '../types'
 import VitalsPanel from '../components/VitalsPanel'
@@ -6,6 +6,7 @@ import PatientChart from '../components/PatientChart'
 import { ProvenanceBadge } from '../components/Badges'
 import AuditPanel from '../components/AuditPanel'
 import { AgentColumns, DeliberationPanel } from '../components/Agents'
+import SimpleBoard from '../components/SimpleBoard'
 
 const NM = <span className="nm">not measured</span>
 
@@ -120,6 +121,7 @@ function Perf({ s }: { s: SentinelState }) {
 
 export default function Dashboard() {
   const { state: s, link } = useSentinelState()
+  const [details, setDetails] = useState(false)
   useEffect(() => {
     document.title = 'Sentinel-OR · How it thinks'
   }, [])
@@ -133,12 +135,16 @@ export default function Dashboard() {
           <b>{s.scenario.title}</b>
         </span>
         <span className="secondary">{s.scenario.on_screen_label}</span>
+        <button className="small-btn" onClick={() => setDetails((d) => !d)}>
+          {details ? 'Simple view' : 'Details'}
+        </button>
         <span className="clock mono">
           t {s.clock_s.toFixed(1)} / {s.scenario.duration_s} s · {s.ended ? 'ended' : s.playing ? 'playing' : 'paused'}
           {link !== 'live' && <span className="err"> · link {link}</span>}
         </span>
       </header>
-      <div className="grid">
+      {!details && <SimpleBoard s={s} />}
+      {details && <div className="grid">
         <div className="col">
           <VitalsPanel state={s} />
           <DrugLog s={s} />
@@ -156,7 +162,7 @@ export default function Dashboard() {
           <AuditPanel s={s} />
           <Perf s={s} />
         </div>
-      </div>
+      </div>}
       <footer>
         <span>Research prototype, not for clinical use. {s.labels.composite}</span>
         <span>{s.labels.attribution}</span>

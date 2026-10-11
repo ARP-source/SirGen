@@ -303,6 +303,10 @@ class Orchestrator:
                      "shared_category": result.shared_category, "question_source_ids": result.question_source_ids,
                      "sides": [asdict(s) for s in result.sides], "unavailable_agents": down, "elapsed_s": elapsed})
         self.player.set_context(event.event_id, "available", note, f"context available: {note} in {elapsed:.1f} s")
+        spoken = result.team_question or result.summary
+        if spoken and hasattr(self.player, "offer_speech"):
+            kind = "team_question" if result.team_question else "shared_view"
+            self.player.offer_speech(spoken, kind=kind)
         log.info("deliberation %s %s in %.2f s (unavailable: %s)", event.event_id, result.outcome, elapsed, down or "none")
 
     def _snapshot(self, elapsed: float, tps_agg: Optional[float], tps_each: Optional[float]) -> dict[str, Any]:
