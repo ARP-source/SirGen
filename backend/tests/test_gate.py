@@ -141,3 +141,15 @@ def test_a_deviation_reaches_the_timeline_but_is_never_offered_as_speech(scenari
     assert any(l.startswith("video-model observation: Clipper in view") for l in labels)
     sv = player.gate.speech_view()
     assert sv.current is None and not sv.queued
+
+
+def test_emergency_flag_follows_the_urgent_thresholds_only():
+    g = SpeechGate()
+    g.on_clock(0.0, ["Clipper"], "live detector", map_=72.0, spo2=98.0)  # an alert-level fall, not an emergency
+    assert g.view().emergency is False and g.view().emergency_text is None
+    g.on_clock(1.0, ["Clipper"], "live detector", map_=54.0, spo2=98.0)
+    v = g.view()
+    assert v.emergency is True and "MAP 54" in (v.emergency_text or "") and v.status == "hold"
+    assert g.speech_view().current is not None and g.speech_view().current.urgent  # spoken through the hold
+    g.on_clock(2.0, ["Clipper"], "live detector", map_=70.0, spo2=98.0)
+    assert g.view().emergency is False and g.view().emergency_text is None

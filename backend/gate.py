@@ -54,6 +54,10 @@ class GateView(BaseModel):
     basis: str = "detector unavailable: instruments unknown"
     settle_remaining_s: float = 0.0
     chip: str = "Clear to speak"
+    # True only while a vital is past the urgent thresholds below. Screen 1 shows a full-strength
+    # banner for this and nothing else; any other alert is a small marker.
+    emergency: bool = False
+    emergency_text: Optional[str] = None
     thresholds_note: str = "Urgent speech demo thresholds: MAP < 55 mmHg or SpO2 < 90 %. Not clinical."
 
 
@@ -98,6 +102,7 @@ class SpeechGate:
         self._hold_since: Optional[float] = None
         self._clear_since: Optional[float] = None
         self._urgent_active = False
+        self._urgent_text: Optional[str] = None
         self._tools: list[str] = []
         self._basis = DETECTOR_UNAVAILABLE
         self._clock = 0.0
@@ -178,7 +183,8 @@ class SpeechGate:
             chip = "Clear to speak"
             status = "open"
         return GateView(status=status, settling=settling, instrument=inst, tools=list(self._tools),
-                        basis=self._basis, settle_remaining_s=remaining, chip=chip)
+                        basis=self._basis, settle_remaining_s=remaining, chip=chip,
+                        emergency=self._urgent_active, emergency_text=self._urgent_text)
 
     def speech_view(self) -> SpeechView:
         cur = self._current
@@ -191,6 +197,7 @@ class SpeechGate:
         trip = (map_ is not None and map_ < URGENT_MAP) or (spo2 is not None and spo2 < URGENT_SPO2)
         if not trip:
             self._urgent_active = False
+            self._urgent_text = None
             return
         if self._urgent_active:
             return
@@ -201,6 +208,7 @@ class SpeechGate:
         if spo2 is not None and spo2 < URGENT_SPO2:
             parts.append(f"SpO2 {spo2:.0f} % (demo threshold {URGENT_SPO2:.0f})")
         text = "; ".join(parts) + ". Demo threshold, not a clinical alarm."
+        self._urgent_text = text
         self.offer(text, kind="urgent_vitals", urgent=True)
 
     def _release(self, reason: str) -> Optional[SpeechItem]:
