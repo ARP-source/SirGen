@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react'
 
-/**
- * Paper-plane messages: a folded note becomes an SVG dart plane, flies in a shallow arc with
- * perspective scale (larger mid-flight, smaller at the ends), plus a short train of followers.
- */
+/** User-supplied paper plane art (nose points up in the PNG). We rotate by heading + 90° so the tip leads. */
 
-export const FOLD_MS = 480
-export const FLIGHT_MS = 1100
-const TRAIL = 3
-const TRAIL_GAP_MS = 130
+export const FOLD_MS = 200
+export const FLIGHT_MS = 1750
+const TRAIL_PLANES = 3
+const TRAIL_GAP_MS = 180
+const DOTS = 7
+/** PNG nose is up (−Y); atan2 heading 0 = east (+X) → rotate 90° clockwise. */
+const HEADING_OFFSET = 90
 
 const reducedMotion = (): boolean =>
   typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -27,46 +27,8 @@ function targetOf(card: HTMLElement): { x: number; y: number } {
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
 }
 
-/** Scale from simulated depth along the arc: smallest at launch/landing, largest mid-air. */
 function depthScale(t: number, base: number): number {
-  const d = 0.68 + 0.42 * Math.sin(Math.PI * t)
-  return base * d
-}
-
-function createPlaneSvg(): SVGSVGElement {
-  const uid = `pp${Math.random().toString(36).slice(2, 9)}`
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.setAttribute('viewBox', '0 0 80 48')
-  svg.setAttribute('class', 'ag-plane-svg')
-  // Nose points right (+X). Fold lines + two wing tones like folded paper.
-  svg.innerHTML = `
-    <defs>
-      <linearGradient id="${uid}-top" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#faf6ec"/>
-        <stop offset="100%" stop-color="#e8dcc4"/>
-      </linearGradient>
-      <linearGradient id="${uid}-bot" x1="0%" y1="100%" x2="100%" y2="0%">
-        <stop offset="0%" stop-color="#ddd0b8"/>
-        <stop offset="100%" stop-color="#f0e8d8"/>
-      </linearGradient>
-    </defs>
-    <path d="M6 24 L74 8 L44 24 L74 40 Z" fill="url(#${uid}-top)" stroke="#b8a992" stroke-width="1.2" stroke-linejoin="round"/>
-    <path d="M6 24 L44 24 L74 40 Z" fill="url(#${uid}-bot)" stroke="#b8a992" stroke-width="1" stroke-linejoin="round"/>
-    <path d="M6 24 L44 24 L74 8" fill="none" stroke="#9a8b78" stroke-width="0.9" opacity="0.65"/>
-    <path d="M44 24 L74 40" fill="none" stroke="#9a8b78" stroke-width="0.7" opacity="0.5"/>
-    <path d="M18 24 L44 22 L44 26 Z" fill="rgba(255,255,255,0.35)"/>
-  `
-  return svg
-}
-
-function createNote(): HTMLDivElement {
-  const note = document.createElement('div')
-  note.className = 'ag-plane-note'
-  for (let i = 0; i < 4; i++) {
-    const line = document.createElement('span')
-    note.appendChild(line)
-  }
-  return note
+  return base * (0.68 + 0.42 * Math.sin(Math.PI * t))
 }
 
 type Path = { a: { x: number; y: number }; b: { x: number; y: number }; mx: number; my: number; heading: number; bow: number }
@@ -86,35 +48,51 @@ function pathBetween(from: HTMLElement, to: HTMLElement): Path {
   return { a, b, mx, my, heading, bow }
 }
 
-function frame(path: Path, t: number, baseScale: number, headingWobble: number): string {
-  const { a, b, mx, my, heading } = path
+function pointOnPath(path: Path, t: number): { x: number; y: number; rot: number } {
+  const { a, b, mx, my, heading, bow } = path
   let x: number
   let y: number
-  let rot = heading + headingWobble
+  let wobble = 0
   if (t <= 0.5) {
     const u = t / 0.5
     const e = 1 - (1 - u) ** 2
     x = a.x + (mx - a.x) * e
     y = a.y + (my - a.y) * e
-    rot += -8 * Math.sign(path.bow) * u
+    wobble = -8 * Math.sign(bow) * u
   } else {
     const u = (t - 0.5) / 0.5
     const e = u * u
     x = mx + (b.x - mx) * e
     y = my + (b.y - my) * e
-    rot += -8 * Math.sign(path.bow) * (1 - u)
+    wobble = -8 * Math.sign(bow) * (1 - u)
   }
+  return { x, y, rot: heading + HEADING_OFFSET + wobble }
+}
+
+function frame(path: Path, t: number, baseScale: number): string {
+  const { x, y, rot } = pointOnPath(path, t)
   const s = depthScale(t, baseScale)
   return `translate(${x}px, ${y}px) translate(-50%, -50%) rotate(${rot}deg) scale(${s.toFixed(3)})`
 }
 
 function flightKeyframes(path: Path, baseScale: number): Keyframe[] {
-  const steps = [0, 0.08, 0.35, 0.5, 0.72, 0.92, 1]
+  const steps = [0, 0.1, 0.35, 0.5, 0.72, 0.92, 1]
   return steps.map((t) => ({
     offset: t,
-    transform: frame(path, t, baseScale, 0),
-    opacity: t >= 0.95 ? 0.2 : 1,
+    transform: frame(path, t, baseScale),
+    opacity: t >= 0.96 ? 0.15 : 1,
   }))
+}
+
+function addDots(body: HTMLDivElement): void {
+  const trail = document.createElement('div')
+  trail.className = 'ag-plane-dots'
+  for (let i = 0; i < DOTS; i++) {
+    const d = document.createElement('i')
+    d.style.setProperty('--i', String(i))
+    trail.appendChild(d)
+  }
+  body.appendChild(trail)
 }
 
 function spawnPlane(
@@ -128,24 +106,27 @@ function spawnPlane(
 ) {
   const el = document.createElement('div')
   el.className = `ag-plane${isLeader ? ' leader' : ' trail'}`
-  const wrap = document.createElement('div')
-  wrap.className = 'ag-plane-body'
-  const note = createNote()
-  const svg = createPlaneSvg()
-  wrap.appendChild(note)
-  wrap.appendChild(svg)
-  el.appendChild(wrap)
-  el.style.transform = frame(path, 0, baseScale * 0.85, 0)
+  const body = document.createElement('div')
+  body.className = 'ag-plane-body'
+  const img = document.createElement('img')
+  img.src = '/paper-plane.png'
+  img.alt = ''
+  img.className = 'ag-plane-img'
+  img.draggable = false
+  body.appendChild(img)
+  addDots(body)
+  el.appendChild(body)
+  el.style.transform = frame(path, 0, baseScale * 0.85)
   layer.appendChild(el)
   live.add(el)
 
-  const foldDone = delayMs + FOLD_MS
-  window.setTimeout(() => wrap.classList.add('folded'), foldDone)
+  const start = delayMs + FOLD_MS
+  window.setTimeout(() => body.classList.add('visible'), delayMs)
 
   const anim = el.animate(flightKeyframes(path, baseScale), {
     duration: FLIGHT_MS,
-    delay: foldDone,
-    easing: 'cubic-bezier(0.42, 0, 0.25, 1)',
+    delay: start,
+    easing: 'cubic-bezier(0.38, 0, 0.2, 1)',
     fill: 'forwards',
   })
 
@@ -156,7 +137,7 @@ function spawnPlane(
   }
   anim.onfinish = cleanup
   anim.oncancel = cleanup
-  window.setTimeout(() => { if (live.has(el)) cleanup() }, foldDone + FLIGHT_MS + 400)
+  window.setTimeout(() => { if (live.has(el)) cleanup() }, start + FLIGHT_MS + 500)
 }
 
 export function flash(card: HTMLElement | null | undefined, cls: string, ms: number): void {
@@ -182,11 +163,10 @@ export function usePlaneLayer(): { layerRef: RefObject<HTMLDivElement>; fly: (fr
     const path = pathBetween(from, to)
     const onLand = () => flash(to, 'ag-recv', 700)
 
-    for (let i = TRAIL; i >= 0; i--) {
-      const trailIndex = i
-      const isLeader = trailIndex === 0
-      const baseScale = isLeader ? 1 : 0.88 - trailIndex * 0.14
-      spawnPlane(layer, live.current, path, delayMs + trailIndex * TRAIL_GAP_MS, baseScale, onLand, isLeader)
+    for (let i = TRAIL_PLANES; i >= 0; i--) {
+      const isLeader = i === 0
+      const baseScale = isLeader ? 1 : 0.9 - i * 0.12
+      spawnPlane(layer, live.current, path, delayMs + i * TRAIL_GAP_MS, baseScale, onLand, isLeader)
     }
   }, [])
 
