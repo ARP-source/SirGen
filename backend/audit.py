@@ -46,7 +46,7 @@ KINDS = (
     "phase_change", "agent_message", "agent_unavailable", "deliberation_result", "voice_qa",
     "segment_end", "report_generated", "metrics_snapshot",
     "speech_held", "speech_released", "speech_spoken", "speech_urgent",
-    "video_event", "deviation", "vision_status", "procedure_reading",
+    "video_event", "deviation", "vision_status", "procedure_reading", "safety_verdict",
 )
 
 

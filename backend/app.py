@@ -23,6 +23,7 @@ from . import report as report_module
 from .agents.llm_client import LightningClient
 from .agents.orchestrator import Orchestrator
 from .agents.procedure import ProcedureAgent
+from .agents.safety import SafetyAgent
 from . import omni as omni_module
 from . import voice as voice_module
 from .audit import AuditLog
@@ -69,6 +70,11 @@ class Services:
 
 def procedure_enabled() -> bool:
     return os.environ.get("SENTINEL_PROCEDURE_AGENT", "1") not in ("0", "false", "off")
+
+
+def safety_enabled() -> bool:
+    """SENTINEL_SAFETY_AGENT=0 sends speech straight to the gate without the second model's check."""
+    return os.environ.get("SENTINEL_SAFETY_AGENT", "1") not in ("0", "false", "off")
 
 
 async def metrics_loop(svc: Services, period_s: float = 1.0) -> None:
@@ -136,6 +142,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     procedure = ProcedureAgent(store, player, scene, steps, LightningClient(), (prompts_dir / "procedure.md").read_text(encoding="utf-8"),
                                audit=audit)
     player.reset_hooks.append(procedure.reset)
+    safety = SafetyAgent(store, player, scene, steps, LightningClient(), (prompts_dir / "safety.md").read_text(encoding="utf-8"),
+                         audit=audit)
+    player.reset_hooks.append(safety.reset)
+    if safety_enabled():
+        procedure.say = lambda text, kind: safety.submit(text, kind=kind, origin="procedure")
+        orchestrator.say = lambda text, kind: safety.submit(text, kind=kind, origin="deliberation")
     player.attach_audit(audit)
     svc = Services(store=store, player=player, video=video, bytes_out=BytesOutCounter(),
                    phase_rules=PhaseRules.load(phase_path), orchestrator=orchestrator,
@@ -145,6 +157,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                    reports={}, report_lock=asyncio.Lock())
     svc.vision = vision_client
     svc.procedure = procedure
+    svc.safety = safety
     app.state.svc = svc
     if vision_client is not None:
         vision_client.start()
@@ -167,6 +180,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await t
         await orchestrator.aclose()
         await procedure.client.aclose()
+        await safety.aclose()
         await svc.report_client.aclose()
         audit.close()
         video.stop()

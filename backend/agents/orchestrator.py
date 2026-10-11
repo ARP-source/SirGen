@@ -25,7 +25,7 @@ import os
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 
 from ..audit import AuditLog
 from ..scenario import Scenario
@@ -120,6 +120,7 @@ class Orchestrator:
         self.spike_max_wait_s = spike_max_wait_s
         self.omni = omni
         self.audit: Optional[AuditLog] = None  # attached by the app; every validated message and outcome is logged
+        self.say: Optional[Callable[[str, str], None]] = None  # attached by the app: the safety agent's submit()
         pdir = prompts_dir or Path(os.environ.get("SENTINEL_PROMPTS", REPO_DIR / "prompts"))
         # system message = the prompt file, verbatim (prompts/README.md step 1); fail loudly if missing
         self.system = {a: (pdir / f"{a}.md").read_text(encoding="utf-8") for a in AGENT_ORDER}
@@ -312,9 +313,12 @@ class Orchestrator:
                      "sides": [asdict(s) for s in result.sides], "unavailable_agents": down, "elapsed_s": elapsed})
         self.player.set_context(event.event_id, "available", note, f"context available: {note} in {elapsed:.1f} s")
         spoken = result.team_question or result.summary
-        if spoken and hasattr(self.player, "offer_speech"):
+        if spoken:
             kind = "team_question" if result.team_question else "shared_view"
-            self.player.offer_speech(spoken, kind=kind)
+            if self.say is not None:
+                self.say(spoken, kind)  # the safety agent checks the sentence, then offers it to the gate
+            elif hasattr(self.player, "offer_speech"):
+                self.player.offer_speech(spoken, kind=kind)
         log.info("deliberation %s %s in %.2f s (unavailable: %s)", event.event_id, result.outcome, elapsed, down or "none")
 
     def _snapshot(self, elapsed: float, tps_agg: Optional[float], tps_each: Optional[float]) -> dict[str, Any]:

@@ -49,7 +49,7 @@ _TOPICS = [
     (re.compile(r"\b(video|critical view|cvs|deviat\w*|procedure steps?)\b", re.IGNORECASE),
      ("| video_event |", "| deviation |", "| phase_change |", "| procedure_reading |")),
     (re.compile(r"\bagents?\b|\bagreed\b|\bdisagreed\b|\bconverged\b", re.IGNORECASE),
-     ("| agent_message |", "| agent_unavailable |", "| deliberation_result |", "| procedure_reading |")),
+     ("| agent_message |", "| agent_unavailable |", "| deliberation_result |", "| procedure_reading |", "| safety_verdict |")),
 ]
 AGENTS = ("surgical", "anesthesia", "record")
 

@@ -21,7 +21,7 @@ import asyncio
 import logging
 import re
 import time
-from typing import Any, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 
 from ..audit import AuditLog
 from ..scene import LiveScene, SceneEvent
@@ -147,6 +147,9 @@ class ProcedureAgent:
         self._spoken_concerns: list[str] = []
         self._task: Optional["asyncio.Task[None]"] = None
         self._generation = 0
+        # Where a concern goes. app.py points this at the safety agent, which checks the sentence
+        # before the gate sees it; by default it goes straight to the gate.
+        self.say: Callable[[str, str], None] = lambda text, kind: self.player.offer_speech(text, kind=kind)
 
     # ---- lifecycle --------------------------------------------------------------------------
     def reset(self) -> None:
@@ -301,7 +304,7 @@ class ProcedureAgent:
                               actor="agent:procedure", clock_s=at_s)
         if r.concern and not any(_similar(r.concern, c) for c in self._spoken_concerns):
             self._spoken_concerns.append(r.concern)
-            self.player.offer_speech(r.concern, kind="shared_view")
+            self.say(r.concern, "shared_view")
         log.info("procedure ok latency_ms=%.0f next=%s concern=%s", latency_ms, r.next, bool(r.concern))
 
     def _fail(self, gen: int, reason: str, attempts: int, rejected: Optional[str], step: str, at_s: float) -> None:

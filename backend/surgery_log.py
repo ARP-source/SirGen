@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 LOG_KINDS = ("phase_change", "video_event", "deviation", "alert", "baseline_alarm", "deliberation_result",
              "drug_given", "nibp_reading", "voice_qa", "speech_urgent", "speech_spoken", "vision_status", "control",
-             "procedure_reading")
+             "procedure_reading", "safety_verdict")
 
 
 @dataclass
@@ -74,6 +74,8 @@ def _kind_label(e: dict[str, Any]) -> str:
         return "video: " + str((e.get("data") or {}).get("kind", "")).replace("_", " ")
     if e["kind"] == "procedure_reading":
         return "procedure agent"
+    if e["kind"] == "safety_verdict":
+        return "safety agent"
     return e["kind"].replace("_", " ")
 
 
@@ -86,6 +88,11 @@ def _what(e: dict[str, Any]) -> str:
         if d.get("concern"):
             parts.append(f"Concern: {d['concern']}")
         return " ".join(p for p in parts if p)
+    if e["kind"] == "safety_verdict":
+        d = e.get("data") or {}
+        word = {"speak": "Cleared", "hold": "Held"}.get(d.get("verdict"), "Passed unvetted")
+        why = d.get("reason") or ""
+        return f"{word}: \"{d.get('proposal', '')}\"" + (f" ({why})" if why else "")
     return e["summary"]
 
 
@@ -144,6 +151,8 @@ def build_surgery_log(entries: list[dict[str, Any]], steps_ref: Optional[dict[st
         flag = ""
         if k == "procedure_reading" and d.get("concern"):
             flag = "concern"
+        if k == "safety_verdict" and d.get("verdict") == "hold":
+            flag = "held"
         if k == "deviation":
             flag = "deviation"
             deviations.append({"log_id": e["id"], "clock_s": t, "what": e["summary"],
