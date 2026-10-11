@@ -1,0 +1,246 @@
+"""Sentinel-OR backend (M3): REST + WS /ws/state, MJPEG /video.mjpg, presenter controls.
+
+Run from the repo root:  uvicorn backend.app:app --port 7000
+"""
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import json
+import logging
+import os
+import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
+
+from .agents.llm_client import LightningClient
+from .agents.orchestrator import Orchestrator
+from . import omni as omni_module
+from .metrics import BytesOutCounter
+from .phase import PhaseRules
+from .scenario import load_all
+from .state import PhaseState, StateStore, VideoInfo
+from .telemetry import ScenarioPlayer
+from .video_worker import VideoWorker
+
+REPO_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = Path(os.environ.get("SENTINEL_DATA", REPO_DIR / "data"))
+DEFAULT_SCENARIO = os.environ.get("SENTINEL_SCENARIO", "true_bleed")
+BOUNDARY = "frame"
+PAUSED_RESEND_S = 0.5  # /video.mjpg repeats the current frame at this interval while nothing new is decoded
+
+logging.basicConfig(level=os.environ.get("SENTINEL_LOG", "INFO"),
+                    format="%(asctime)s level=%(levelname)s logger=%(name)s msg=%(message)s")
+log = logging.getLogger("sentinel.app")
+
+
+@dataclass
+class Services:
+    store: StateStore
+    player: ScenarioPlayer
+    video: VideoWorker
+    bytes_out: BytesOutCounter
+    phase_rules: PhaseRules
+    orchestrator: Orchestrator
+    patient: dict[str, Any]
+    started: float
+
+
+async def metrics_loop(svc: Services, period_s: float = 1.0) -> None:
+    while True:
+        m = svc.store.state.metrics.model_copy(update={
+            "render_fps": svc.video.render_fps(), "bytes_out": svc.bytes_out.read(),
+        })
+        svc.store.update(metrics=m, video=VideoInfo(**svc.video.stats()))
+        await asyncio.sleep(period_s)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    store = StateStore()
+    scenarios = load_all(DATA_DIR)
+    video = VideoWorker(REPO_DIR)
+    player = ScenarioPlayer(store, scenarios, video=video, initial=DEFAULT_SCENARIO)
+    phase_path = DATA_DIR / "procedure" / "phase_rules.json"
+    patient = json.loads((DATA_DIR / "patient" / "patient_record.json").read_text())
+    client = LightningClient()  # LIGHTNING_URL, LIGHTNING_MODEL, AGENT_TIMEOUT_S
+    omni = omni_module.OmniClient(REPO_DIR) if omni_module.enabled() else None  # OMNI_URL, OMNI_TIMEOUT_S; skipped with no video
+    orchestrator = Orchestrator(store, player, patient, json.loads(phase_path.read_text()), client=client, omni=omni)
+    player.listener = orchestrator
+    svc = Services(store=store, player=player, video=video, bytes_out=BytesOutCounter(),
+                   phase_rules=PhaseRules.load(phase_path), orchestrator=orchestrator,
+                   patient=patient, started=time.monotonic())
+    app.state.svc = svc
+    video.start()
+    tasks = [asyncio.create_task(store.run_broadcaster(), name="broadcaster"),
+             asyncio.create_task(player.run(), name="telemetry"),
+             asyncio.create_task(metrics_loop(svc), name="metrics")]
+    log.info("started: scenarios=%s data=%s lightning=%s model=%s timeout=%gs", ",".join(scenarios), DATA_DIR,
+             client.base_url, client.model or "(first id from /models)", client.timeout_s)
+    try:
+        yield
+    finally:
+        for t in tasks:
+            t.cancel()
+        for t in tasks:
+            with contextlib.suppress(asyncio.CancelledError):
+                await t
+        await orchestrator.aclose()
+        video.stop()
+
+
+app = FastAPI(title="Sentinel-OR", version="0.3.0-m3", lifespan=lifespan)
+
+
+def services(request: Request | WebSocket) -> Services:
+    return request.app.state.svc
+
+
+# ---- read endpoints -----------------------------------------------------------------
+@app.get("/health")
+async def health(request: Request) -> dict[str, Any]:
+    svc = services(request)
+    st = svc.store.state
+    return {"status": "ok", "milestone": "M3", "scenario_id": st.scenario_id, "clock_s": st.clock_s,
+            "playing": st.playing, "ws_clients": svc.store.subscriber_count,
+            "video": svc.video.stats(), "agents": svc.orchestrator.status,
+            "lightning": {"url": svc.orchestrator.client.base_url, "model": svc.orchestrator.client.model,
+                          "timeout_s": svc.orchestrator.client.timeout_s},
+            "omni": None if svc.orchestrator.omni is None else {"url": svc.orchestrator.omni.base_url},
+            "uptime_s": round(time.monotonic() - svc.started, 1)}
+
+
+@app.get("/scenarios")
+async def scenarios(request: Request) -> list[dict[str, Any]]:
+    return [sc.summary() for sc in services(request).player.scenarios.values()]
+
+
+@app.get("/patient")
+async def patient(request: Request) -> dict[str, Any]:
+    return services(request).patient
+
+
+@app.get("/state")
+async def state(request: Request) -> dict[str, Any]:
+    return services(request).store.snapshot()
+
+
+@app.get("/vitals/history")
+async def vitals_history(request: Request) -> dict[str, Any]:
+    """1 Hz samples revealed so far (t_s 0..now), for charts that join mid-run."""
+    player = services(request).player
+    series = player.scenario.series
+    return {"scenario_id": player.scenario.id, "source": series.source,
+            "samples": series.window(0, int(player.clock))}
+
+
+# ---- presenter controls -----------------------------------------------------------------
+def _ack(svc: Services) -> dict[str, Any]:
+    st = svc.store.state
+    return {"ok": True, "scenario_id": st.scenario_id, "clock_s": st.clock_s, "playing": st.playing}
+
+
+@app.post("/control/play")
+async def control_play(request: Request) -> dict[str, Any]:
+    svc = services(request)
+    svc.player.play()
+    return _ack(svc)
+
+
+@app.post("/control/pause")
+async def control_pause(request: Request) -> dict[str, Any]:
+    svc = services(request)
+    svc.player.pause()
+    return _ack(svc)
+
+
+@app.post("/control/reset")
+async def control_reset(request: Request) -> dict[str, Any]:
+    svc = services(request)
+    svc.player.reset()
+    svc.store.update(phase=PhaseState())
+    return _ack(svc)
+
+
+@app.post("/control/restart")
+async def control_restart(request: Request) -> dict[str, Any]:
+    svc = services(request)
+    svc.player.restart()
+    return _ack(svc)
+
+
+@app.post("/control/trigger")
+async def control_trigger(request: Request) -> dict[str, Any]:
+    svc = services(request)
+    event = svc.player.trigger()
+    return {**_ack(svc), "event": event.model_dump(mode="json")}
+
+
+@app.post("/control/scenario/{scenario_id}")
+async def control_scenario(scenario_id: str, request: Request) -> dict[str, Any]:
+    svc = services(request)
+    if scenario_id not in svc.player.scenarios:
+        raise HTTPException(404, f"unknown scenario {scenario_id}")
+    svc.player.select(scenario_id)
+    svc.store.update(phase=PhaseState())
+    return _ack(svc)
+
+
+@app.post("/control/phase/{name}")
+async def control_phase(name: str, request: Request) -> dict[str, Any]:
+    """Presenter override of the step label ('auto' clears it)."""
+    svc = services(request)
+    if name == "auto":
+        svc.store.update(phase=PhaseState())
+        return _ack(svc)
+    display = svc.phase_rules.display.get(name)
+    if display is None:
+        raise HTTPException(404, f"unknown phase {name}")
+    svc.store.update(phase=PhaseState(name=name, display=display, since_s=svc.store.state.clock_s,
+                                      status="set by presenter", set_by="presenter"))
+    return _ack(svc)
+
+
+# ---- streams ------------------------------------------------------------------------------
+@app.websocket("/ws/state")
+async def ws_state(ws: WebSocket) -> None:
+    await ws.accept()
+    store = services(ws).store
+    queue = store.subscribe()
+    try:
+        while True:
+            await ws.send_text(await queue.get())
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
+        store.unsubscribe(queue)
+
+
+@app.get("/video.mjpg")
+async def video_mjpg(request: Request) -> StreamingResponse:
+    video = services(request).video
+
+    async def frames() -> AsyncIterator[bytes]:
+        # Each part is closed by the next boundary right away. Some browsers still paint a
+        # part only when the following one arrives, so while no new frame exists (paused)
+        # the same frame, with the same frame id, is sent again every PAUSED_RESEND_S.
+        yield f"--{BOUNDARY}\r\n".encode()
+        last_id, sent_at = -1, 0.0
+        while True:
+            latest = video.latest()
+            now = time.monotonic()
+            if latest is None or (latest[0] == last_id and now - sent_at < PAUSED_RESEND_S):
+                await asyncio.sleep(0.01)
+                continue
+            (last_id, jpeg), sent_at = latest, now
+            yield (f"Content-Type: image/jpeg\r\nContent-Length: {len(jpeg)}\r\n"
+                   f"X-Frame-Id: {last_id}\r\n\r\n").encode() + jpeg + f"\r\n--{BOUNDARY}\r\n".encode()
+
+    return StreamingResponse(frames(), media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}",
+                             headers={"Cache-Control": "no-store"})

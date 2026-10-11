@@ -1,0 +1,275 @@
+"""Replays a scenario's vitals and drug log on the scenario clock, applies the
+baseline rule and raises the alert immediately, in code, when the event fires.
+
+Alerts never wait for models (hard rule 3): the alert is published with an
+urgent state update in the same tick that detects the event.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from typing import Optional, Protocol
+
+from .scenario import Scenario
+from .state import (
+    AGENTS_NOT_ATTACHED, Baseline, DrugEntry, Event, NibpEntry, ScenarioInfo, StateStore,
+    TimelineItem, Vitals,
+)
+
+log = logging.getLogger("sentinel.telemetry")
+
+R1_MAP_BELOW = 65.0
+R1_HOLD_S = 60
+R2_SBP_ABOVE = 180.0
+R2_HOLD_S = 5
+
+
+class BaselineRule:
+    """Fixed BP rule (data/README.md): alarm if arterial MAP < 65 mmHg for >= 60 s (R1)
+    or arterial SBP > 180 mmHg for >= 5 s (R2). Fed one 1 Hz sample per call."""
+
+    def __init__(self) -> None:
+        self._map_low_since: Optional[int] = None
+        self._sbp_high_since: Optional[int] = None
+        self.fired_rule: Optional[str] = None
+        self.fired_at: Optional[int] = None
+
+    def step(self, t: int, map_: Optional[float], sbp: Optional[float]) -> Optional[str]:
+        """Returns the rule id the first time the alarm fires, else None."""
+        self._map_low_since = _since(self._map_low_since, t, map_ is not None and map_ < R1_MAP_BELOW)
+        self._sbp_high_since = _since(self._sbp_high_since, t, sbp is not None and sbp > R2_SBP_ABOVE)
+        if self.fired_rule is not None:
+            return None
+        if self._map_low_since is not None and t - self._map_low_since >= R1_HOLD_S:
+            self.fired_rule, self.fired_at = "R1", t
+        elif self._sbp_high_since is not None and t - self._sbp_high_since >= R2_HOLD_S:
+            self.fired_rule, self.fired_at = "R2", t
+        return self.fired_rule
+
+
+def _since(current: Optional[int], t: int, condition: bool) -> Optional[int]:
+    if not condition:
+        return None
+    return t if current is None else current
+
+
+class VideoControl(Protocol):
+    def set_playing(self, playing: bool) -> None: ...
+    def rewind(self, scenario: Scenario) -> None: ...
+
+
+class EventListener(Protocol):
+    """Receives events after the alert has been published, and run resets."""
+    def on_event(self, event: Event) -> None: ...
+    def on_reset(self) -> None: ...
+
+
+class ScenarioPlayer:
+    """Owns the scenario clock. All state changes go through the StateStore."""
+
+    def __init__(self, store: StateStore, scenarios: dict[str, Scenario],
+                 video: Optional[VideoControl] = None, initial: Optional[str] = None) -> None:
+        if not scenarios:
+            raise ValueError("no scenarios loaded")
+        self.store = store
+        self.scenarios = scenarios
+        self.video = video
+        self._event_seq = 0
+        self.listener: Optional[EventListener] = None
+        self.scenario = scenarios[initial] if initial in scenarios else next(iter(scenarios.values()))
+        self._reset_run()
+        self._sync()
+
+    # ---- presenter controls -------------------------------------------------
+    def select(self, scenario_id: str) -> None:
+        self.scenario = self.scenarios[scenario_id]
+        self.reset()
+
+    def play(self) -> None:
+        if self.ended:
+            self._reset_run()
+        self._set_playing(True)
+        self._sync(info=f"play at t {self.clock:.1f} s")
+
+    def pause(self) -> None:
+        self._set_playing(False)
+        self._sync(info=f"pause at t {self.clock:.1f} s")
+
+    def reset(self) -> None:
+        self._reset_run()
+        self._set_playing(False)
+        self._sync()
+
+    def restart(self) -> None:
+        self._reset_run()
+        self._set_playing(True)
+        self._sync()
+
+    def trigger(self) -> Event:
+        """Presenter trigger: raise the alert now."""
+        return self._fire("presenter", self.clock, detected_at=time.perf_counter())
+
+    # ---- clock ----------------------------------------------------------------
+    def tick(self, dt: float) -> None:
+        """Advance the clock by dt seconds (if playing) and process what happened."""
+        if self.playing:
+            self.clock = min(self.clock + dt, float(self.scenario.duration_s))
+        while self._next_second <= int(self.clock):
+            self._process_second(self._next_second)
+            self._next_second += 1
+        self._sync()
+        ev_t = self.scenario.event_t_s
+        if ev_t is not None and not self._scheduled_fired and self.clock >= ev_t:
+            self._fire("scenario", float(ev_t), detected_at=time.perf_counter())
+        if self.playing and self.clock >= self.scenario.duration_s:
+            self._set_playing(False)
+            self.ended = True
+            self._add_timeline("info", "segment end")
+            self._sync()
+
+    async def run(self, hz: float = 20.0) -> None:
+        period = 1.0 / hz
+        last = time.monotonic()
+        while True:
+            await asyncio.sleep(period)
+            now = time.monotonic()
+            try:
+                self.tick(now - last)
+            except Exception:
+                log.exception("telemetry tick failed")
+            last = now
+
+    # ---- internals ----------------------------------------------------------
+    def set_context(self, event_id: str, status: str, note: str = "", timeline: Optional[str] = None) -> bool:
+        """Update the event's context status (pending/available/unavailable). Only the
+        player writes `event` to the state, so the orchestrator goes through here."""
+        if self._event is None or self._event.event_id != event_id:
+            return False
+        self._event = self._event.model_copy(update={"context_status": status, "context_note": note})
+        if timeline:
+            self._add_timeline("context", timeline, event_id)
+        self._sync(urgent=status != "pending")
+        return True
+
+    def _reset_run(self) -> None:
+        if self.listener is not None:
+            self.listener.on_reset()  # cancels a running deliberation, clears agents/deliberation
+        self.clock = 0.0
+        self.playing = False
+        self.ended = False
+        self._next_second = 0
+        self._scheduled_fired = False
+        self._baseline = BaselineRule()
+        self._timeline: list[TimelineItem] = []
+        self._event: Optional[Event] = None
+        if self.video is not None:
+            self.video.rewind(self.scenario)
+        self._process_second(0)
+        self._next_second = 1
+        sc = self.scenario
+        self.store.update(
+            scenario_id=sc.id,
+            scenario=ScenarioInfo(id=sc.id, title=sc.title, on_screen_label=sc.on_screen_label,
+                                  duration_s=sc.duration_s, event_t_s=sc.event_t_s,
+                                  event_note=sc.event_note, alert_level=sc.alert_level),
+            event=None, timeline=[],
+            metrics=self.store.state.metrics.model_copy(update={"event_to_alert_ms": None, "deliberation_s": None}),
+        )
+
+    def _process_second(self, t: int) -> None:
+        sample = self.scenario.series.at(t)
+        fired = self._baseline.step(t, sample["map"], sample["sbp"])
+        if fired:
+            self._add_timeline("baseline", f"baseline rule {fired} alarm", t_s=float(t))
+        self._vitals_t = t
+
+    def _vitals(self) -> Vitals:
+        t = self._vitals_t
+        s = self.scenario.series
+        return Vitals(t_s=t, **s.at(t), source=s.source, source_kind=s.source_kind)
+
+    def _baseline_state(self) -> Baseline:
+        b = self.scenario.baseline
+        return Baseline(rule_text=b.get("rule", ""), alarm=self._baseline.fired_rule is not None,
+                        fired_rule=self._baseline.fired_rule, fired_at_t_s=self._baseline.fired_at,
+                        expected_fires=b.get("fires"), expected_fires_at_t_s=b.get("fires_at_t_s"),
+                        expected_correct=b.get("correct"), comment=b.get("comment", ""))
+
+    def _visible_drugs(self) -> list[DrugEntry]:
+        return [DrugEntry(t_s=d.get("t_s"), drug=d["drug"], detail=d["detail"], source_id=d["source_id"],
+                          provenance=d.get("provenance", ""))
+                for d in self.scenario.drug_log if d.get("t_s") is None or d["t_s"] <= self.clock]
+
+    def _visible_nibp(self) -> list[NibpEntry]:
+        return [NibpEntry(**{k: n.get(k) for k in ("t_s", "sbp", "dbp", "map", "source_id", "provenance")})
+                for n in self.scenario.nibp if n["t_s"] <= self.clock]
+
+    def _add_timeline(self, kind: str, label: str, event_id: Optional[str] = None,
+                      t_s: Optional[float] = None) -> None:
+        t = round(self.clock, 2) if t_s is None else t_s
+        self._timeline.append(TimelineItem(t_s=t, kind=kind, label=label, event_id=event_id))
+
+    def _set_playing(self, playing: bool) -> None:
+        self.playing = playing
+        if self.video is not None:
+            self.video.set_playing(playing)
+
+    def _sync(self, urgent: bool = False, info: Optional[str] = None) -> float:
+        if info:
+            self._add_timeline("info", info)
+        return self.store.update(
+            urgent=urgent, clock_s=round(self.clock, 2), playing=self.playing, ended=self.ended,
+            vitals=self._vitals(), drug_log=self._visible_drugs(), nibp=self._visible_nibp(),
+            baseline=self._baseline_state(), event=self._event, timeline=list(self._timeline),
+        )
+
+    def _alert_text(self) -> str:
+        s = self.scenario.series
+        now = s.at(self._vitals_t)
+        if self.scenario.event_type == "art_spike":
+            prev = s.at(max(0, self._vitals_t - 2))["sbp"]
+            body = f"arterial SBP {now['sbp']:.0f} mmHg (was {prev:.0f} mmHg 2 s earlier)"
+        else:
+            window = [s.at(t)["map"] for t in range(max(0, self._vitals_t - 60), self._vitals_t + 1)]
+            base = max(v for v in window if v is not None)
+            body = f"MAP {now['map']:.0f} mmHg, {base - now['map']:.0f} mmHg below its 60-s baseline"
+        if s.source_kind == "real_time_shifted":
+            return f"TELEMETRY ALERT (VitalDB case 59, time-shifted): {body}"
+        return f"SIMULATED TELEMETRY ALERT: {body}"
+
+    def _fire(self, trigger: str, event_ts: float, detected_at: float) -> Event:
+        """Raise the alert at once. `detected_at` is the perf_counter time the event
+        was detected in code; event_to_alert_ms runs from there to publication."""
+        if trigger == "scenario":
+            self._scheduled_fired = True
+        self._event_seq += 1
+        sc = self.scenario
+        event = Event(
+            event_id=f"ev-{self._event_seq}", event_type=sc.event_type, event_timestamp=round(event_ts, 2),
+            trigger=trigger, simulated=sc.series.source_kind != "real_time_shifted",
+            alert_shown_at=round(self.clock, 3), alert_level=sc.alert_level, alert_text=self._alert_text(),
+            detect_lag_ms=round(max(0.0, self.clock - event_ts) * 1000, 1),
+            context_status="pending" if self.listener else "unavailable",
+            context_note="agents deliberating" if self.listener else AGENTS_NOT_ATTACHED,
+        )
+        self._event = event
+        how = "banner" if sc.alert_level == "banner" else "quiet flag"
+        self._add_timeline("event", f"{event.event_type} triggered ({trigger})", event.event_id)
+        self._add_timeline("alert", f"alert shown ({how})", event.event_id)
+        published_at = self._sync(urgent=True)
+        ms = round((published_at - detected_at) * 1000, 3)
+        self._event = event.model_copy(update={"event_to_alert_ms": ms})
+        if self.listener is None:
+            self._add_timeline("context", f"context unavailable: {AGENTS_NOT_ATTACHED}", event.event_id)
+        else:
+            self._add_timeline("context", "context pending: agents deliberating", event.event_id)
+        self.store.update(metrics=self.store.state.metrics.model_copy(update={"event_to_alert_ms": ms}))
+        self._sync()
+        log.info("alert %s %s at t=%.2f, event_to_alert_ms=%.3f", event.event_id, trigger, self.clock, ms)
+        if self.listener is not None:  # after the alert is out: the agents never delay it (hard rule 3)
+            try:
+                self.listener.on_event(self._event)
+            except Exception:
+                log.exception("event listener failed")
+        return self._event

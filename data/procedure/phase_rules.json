@@ -1,0 +1,61 @@
+{
+  "schema_version": "1",
+  "label": "Heuristic, not a validated model. Hand-written rules mapping detected tools to Cholec80 phases for a demo label. Thresholds are untuned guesses; tune on Cholec80 tool and phase annotations before relying on them.",
+  "basis": "Tool usage correlates with surgical phase in Cholec80: Twinanda AP, Shehata S, Mutter D, Marescaux J, de Mathelin M, Padoy N. EndoNet: A Deep Architecture for Recognition Tasks on Laparoscopic Videos. arXiv:1602.03012 (2016), which notes that tool signals provide valuable information for phase recognition. Journal version: IEEE Trans Med Imaging 2017;36(1):86-97 (volume/pages not verified).",
+  "dataset": "Cholec80, CAMMA (CC BY-NC-SA 4.0). Phase labels at 25 fps, tool-presence labels at 1 fps.",
+  "tools": ["Grasper", "Bipolar", "Hook", "Scissors", "Clipper", "Irrigator", "SpecimenBag"],
+  "phases": [
+    {"id": "P1", "name": "Preparation", "display": "Preparation", "typical_tools": ["Grasper"]},
+    {"id": "P2", "name": "CalotTriangleDissection", "display": "Calot triangle dissection", "typical_tools": ["Grasper", "Hook"]},
+    {"id": "P3", "name": "ClippingCutting", "display": "Clipping and cutting", "typical_tools": ["Grasper", "Clipper", "Scissors"]},
+    {"id": "P4", "name": "GallbladderDissection", "display": "Gallbladder dissection", "typical_tools": ["Grasper", "Hook"]},
+    {"id": "P5", "name": "GallbladderPackaging", "display": "Gallbladder packaging", "typical_tools": ["Grasper", "SpecimenBag"]},
+    {"id": "P6", "name": "CleaningCoagulation", "display": "Cleaning and coagulation", "typical_tools": ["Grasper", "Irrigator", "Bipolar"]},
+    {"id": "P7", "name": "GallbladderRetraction", "display": "Gallbladder retraction", "typical_tools": ["Grasper", "SpecimenBag"]}
+  ],
+  "typical_tools_note": "typical_tools are a qualitative summary, not counts from the annotations.",
+  "evaluation": {
+    "step_s": 1,
+    "window_s": 10,
+    "presence": "A tool counts as present in a 1-s step if any detection of it has confidence >= 0.5 in that second.",
+    "fraction": "f(tool) = seconds present in the last window_s / window_s"
+  },
+  "hysteresis": {
+    "confirm_steps": 3,
+    "confirm_note": "A candidate transition must be true for 3 consecutive steps before the phase changes.",
+    "min_dwell_s": 15,
+    "min_dwell_note": "No transition out of a phase until it has been held this long.",
+    "exit_lower_than_enter": "Enter thresholds (below) are higher than the 'absent' conditions used to leave a phase, so the label does not flicker.",
+    "detector_unavailable": "Hold the current phase and show it as stale; never guess."
+  },
+  "start_phase": "Preparation",
+  "allowed_transitions": [
+    ["Preparation", "CalotTriangleDissection"],
+    ["CalotTriangleDissection", "ClippingCutting"],
+    ["ClippingCutting", "CalotTriangleDissection"],
+    ["ClippingCutting", "GallbladderDissection"],
+    ["GallbladderDissection", "GallbladderPackaging"],
+    ["GallbladderDissection", "CleaningCoagulation"],
+    ["GallbladderPackaging", "CleaningCoagulation"],
+    ["GallbladderPackaging", "GallbladderRetraction"],
+    ["CleaningCoagulation", "GallbladderRetraction"],
+    ["GallbladderRetraction", "CleaningCoagulation"]
+  ],
+  "allowed_transitions_note": "Mostly the canonical order P1..P7. The backtrack P3->P2 and the P6/P7 swaps are allowed because cases vary; check the graph against the Cholec80 phase annotations.",
+  "rules": [
+    {"id": "r1", "from": "Preparation", "to": "CalotTriangleDissection", "when": "f(Hook) >= 0.5"},
+    {"id": "r2", "from": "CalotTriangleDissection", "to": "ClippingCutting", "when": "f(Clipper) >= 0.3 or f(Scissors) >= 0.3"},
+    {"id": "r3", "from": "ClippingCutting", "to": "GallbladderDissection", "when": "Clipper and Scissors absent for >= 20 s and f(Hook) >= 0.5 and Scissors seen at least once in this phase"},
+    {"id": "r4", "from": "ClippingCutting", "to": "CalotTriangleDissection", "when": "Clipper and Scissors absent for >= 20 s and f(Hook) >= 0.5 and Scissors never seen in this phase"},
+    {"id": "r5", "from": "GallbladderDissection", "to": "GallbladderPackaging", "when": "f(SpecimenBag) >= 0.3"},
+    {"id": "r6", "from": ["GallbladderDissection", "GallbladderPackaging", "GallbladderRetraction"], "to": "CleaningCoagulation", "when": "(f(Irrigator) >= 0.3 and f(Bipolar) >= 0.2) or f(Irrigator) >= 0.6"},
+    {"id": "r7", "from": "CleaningCoagulation", "to": "GallbladderRetraction", "when": "f(SpecimenBag) >= 0.3 and Irrigator and Bipolar absent for >= 10 s"},
+    {"id": "r8", "from": "GallbladderPackaging", "to": "GallbladderRetraction", "when": "dwell in GallbladderPackaging >= 60 s and SpecimenBag absent for >= 10 s, then f(SpecimenBag) >= 0.3 again"}
+  ],
+  "rule_order": "Evaluate only rules whose 'from' is the current phase, in list order; first match becomes the candidate.",
+  "out_of_phase_events": [
+    {"id": "oop-1", "when": "f(Irrigator) >= 0.3 while phase is CalotTriangleDissection, ClippingCutting or GallbladderDissection", "event": "Suction/irrigator in use outside cleaning phase", "note": "Passed to the surgical agent as an observation. Can mean bleeding, smoke or fluid; it is not a bleeding detector. Does not change the phase."},
+    {"id": "oop-2", "when": "f(Bipolar) >= 0.2 while phase is ClippingCutting or GallbladderDissection", "event": "Bipolar in use outside cleaning phase", "note": "Observation only; does not change the phase."}
+  ],
+  "presenter_override": "The /control page can force a phase if the heuristic is wrong during the demo; the label then reads 'set by presenter'."
+}

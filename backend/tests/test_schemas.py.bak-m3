@@ -1,0 +1,119 @@
+import json
+
+import pytest
+from pydantic import ValidationError
+
+from backend.agents.schemas import AgentMessage, validate_sources
+
+GOOD = {
+    "agent": "anesthesia", "round": 1, "category": "drug_effect",
+    "hypothesis": "MAP fell after a propofol increase with HR flat.", "confidence": "high",
+    "evidence": [{"source_id": "drug-03", "note": "propofol rate up 75 s before MAP fell"},
+                 {"source_id": "vit-art", "note": "MAP 71 to 61 mmHg"}],
+    "responds_to": [],
+}
+KNOWN = {"drug-01", "drug-02", "drug-03", "vit-art", "meds-01"}
+
+
+def test_valid_message_parses_and_validates():
+    msg = AgentMessage.model_validate(GOOD)
+    check = validate_sources(msg, KNOWN)
+    assert check.ok and check.unknown_ids == []
+
+
+def test_unknown_source_id_fails():
+    bad = json.loads(json.dumps(GOOD))
+    bad["evidence"][1]["source_id"] = "lab-99"
+    check = validate_sources(AgentMessage.model_validate(bad), KNOWN)
+    assert not check.ok and check.unknown_ids == ["lab-99"]
+
+
+def test_no_evidence_fails():
+    msg = AgentMessage.model_validate({**GOOD, "evidence": []})
+    assert not validate_sources(msg, KNOWN).ok
+
+
+@pytest.mark.parametrize("field,value", [
+    ("category", "hemorrhage"), ("confidence", "87%"), ("agent", "nurse"), ("round", 3),
+])
+def test_enums_are_enforced(field, value):
+    with pytest.raises(ValidationError):
+        AgentMessage.model_validate({**GOOD, field: value})
+
+
+def test_extra_fields_rejected_and_stance_enum():
+    with pytest.raises(ValidationError):
+        AgentMessage.model_validate({**GOOD, "risk": "high"})
+    with pytest.raises(ValidationError):
+        AgentMessage.model_validate({**GOOD, "round": 2,
+                                     "responds_to": [{"agent": "record", "stance": "maybe", "note": "x"}]})
+
+
+def test_schema_field_order_matches_spec():
+    assert list(AgentMessage.model_json_schema()["properties"]) == [
+        "agent", "round", "category", "hypothesis", "confidence", "evidence", "responds_to"]
+
+
+# ---- M3: narrowed per-call schema and output validation ---------------------------------------
+from backend.agents.schemas import InvalidMessage, check_message, narrowed_schema  # noqa: E402
+
+R1 = {"agent": "anesthesia", "round": 1, "category": "drug_effect",
+      "hypothesis": "The fall fits a propofol increase 85 s before the alert.", "confidence": "low",
+      "evidence": [{"source_id": "drug-03", "note": "propofol target 2.8 to 3.2"}], "responds_to": []}
+ALLOWED = ["vit-art", "drug-01", "drug-03"]
+
+
+def dump(**over):
+    return json.dumps({**R1, **over})
+
+
+def test_narrowed_schema_round1_and_round2():
+    s1 = narrowed_schema("anesthesia", 1, ALLOWED, [])
+    assert list(s1["properties"]) == ["agent", "round", "category", "hypothesis", "confidence", "evidence", "responds_to"]
+    assert s1["properties"]["agent"]["enum"] == ["anesthesia"] and s1["properties"]["round"]["enum"] == [1]
+    assert s1["properties"]["evidence"]["items"]["properties"]["source_id"]["enum"] == ALLOWED
+    assert (s1["properties"]["evidence"]["minItems"], s1["properties"]["evidence"]["maxItems"]) == (1, 3)
+    assert s1["properties"]["hypothesis"]["maxLength"] == 240
+    assert s1["properties"]["evidence"]["items"]["properties"]["note"]["maxLength"] == 90
+    assert s1["properties"]["responds_to"]["maxItems"] == 0
+    s2 = narrowed_schema("anesthesia", 2, ALLOWED, ["surgical", "record"])
+    rt = s2["properties"]["responds_to"]
+    assert rt["minItems"] == rt["maxItems"] == 2 and rt["items"]["properties"]["agent"]["enum"] == ["surgical", "record"]
+    assert rt["items"]["properties"]["note"]["maxLength"] == 140
+    assert "$ref" not in json.dumps(s2) and "$defs" not in s2 and s2["additionalProperties"] is False
+    json.dumps(s2)  # serialisable for response_format
+
+
+def test_check_message_accepts_valid_and_rejects_each_rule():
+    assert check_message(dump(), "anesthesia", 1, ALLOWED, []).category == "drug_effect"
+    bad = {
+        "not json": "{oops",
+        "unknown source_id": dump(evidence=[{"source_id": "lab-99", "note": "x"}]),
+        "id outside own evidence": dump(evidence=[{"source_id": "meds-01", "note": "x"}]),
+        "no evidence": dump(evidence=[]),
+        "wrong agent": dump(agent="record"),
+        "wrong round": dump(round=2),
+        "two sentences": dump(hypothesis="It fell. The drug was raised."),
+        "diagnosis wording": dump(hypothesis="This is a diagnosis of drug effect."),
+        "percent": dump(hypothesis="It is about 40% likely."),
+        "treatment wording": dump(hypothesis="The team should check the drug."),
+        "banned in note": dump(evidence=[{"source_id": "drug-03", "note": "give blood"}]),
+        "bleeding statement": dump(hypothesis="The patient has a haemorrhage."),
+        "round 1 with responses": dump(responds_to=[{"agent": "record", "stance": "agree", "note": "ok"}]),
+        "too long": dump(hypothesis="x" * 241),
+    }
+    for name, text in bad.items():
+        with pytest.raises(InvalidMessage):
+            check_message(text, "anesthesia", 1, ALLOWED, [])
+            pytest.fail(f"{name} was accepted")
+
+
+def test_check_message_round2_requires_one_response_per_available_other():
+    r2 = {**R1, "round": 2, "responds_to": [{"agent": "surgical", "stance": "adds", "note": "fits their concern"},
+                                            {"agent": "record", "stance": "agree", "note": "same view"}]}
+    assert check_message(json.dumps(r2), "anesthesia", 2, ALLOWED, ["surgical", "record"]).round == 2
+    with pytest.raises(InvalidMessage, match="responds_to"):
+        check_message(json.dumps(r2), "anesthesia", 2, ALLOWED, ["surgical"])  # record unavailable: answer only surgical
+    r2["responds_to"] = r2["responds_to"][:1]
+    with pytest.raises(InvalidMessage, match="responds_to"):
+        check_message(json.dumps(r2), "anesthesia", 2, ALLOWED, ["surgical", "record"])

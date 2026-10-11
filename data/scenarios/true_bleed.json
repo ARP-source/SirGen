@@ -1,0 +1,73 @@
+{
+  "schema_version": "1",
+  "id": "true_bleed",
+  "title": "Pressure falls after clipping and cutting, suction in use, patient on an anticoagulant",
+  "on_screen_label": "Simulated vitals and drug log on recorded Cholec80 footage. The footage is a routine case and is not itself a bleed.",
+  "provenance": {"video": "real: Cholec80 (recorded, de-identified)", "vitals": "simulated", "drug_log": "simulated", "patient": "patient/patient_record.json (real VitalDB case 59 fields + synthetic history)"},
+  "ground_truth_cause": {"category": "bleeding_concern", "text": "Simulated haemorrhage starting after clipping and cutting, in a patient on apixaban. The propofol target increase 25 s before the segment is a deliberate confounder."},
+  "time_base": "t_s = seconds from video segment start; negative = before the segment starts.",
+  "duration_s": 150,
+  "event_t_s": 60,
+  "event_note": "Suggested code trigger point: MAP down >= 10 mmHg from its 60-s baseline with HR rising. Design target for the demo, not a clinical threshold.",
+  "video": {"dataset": "Cholec80", "video_id": "TODO-pick-after-testing-detector", "start_s": null, "end_s": null,
+            "selection_hint": "Use Cholec80 tool annotations (1 fps) to find Clipper then Scissors, followed within ~30 s by Irrigator. Pick a clip where the detector boxes are stable."},
+  "procedure_phase_at_event": "ClippingCutting",
+  "vitals": {
+    "vitals_source": "simulated",
+    "source_id": "vit-art",
+    "keyframes": [
+      {"t_s": 0,   "hr": 72,  "sbp": 118, "dbp": 64, "map": 82, "spo2": 98},
+      {"t_s": 10,  "hr": 72,  "sbp": 117, "dbp": 64, "map": 82, "spo2": 98},
+      {"t_s": 20,  "hr": 73,  "sbp": 118, "dbp": 63, "map": 81, "spo2": 98},
+      {"t_s": 30,  "hr": 72,  "sbp": 116, "dbp": 63, "map": 81, "spo2": 98},
+      {"t_s": 40,  "hr": 74,  "sbp": 115, "dbp": 62, "map": 80, "spo2": 98},
+      {"t_s": 50,  "hr": 77,  "sbp": 110, "dbp": 59, "map": 76, "spo2": 98},
+      {"t_s": 60,  "hr": 81,  "sbp": 104, "dbp": 56, "map": 72, "spo2": 98},
+      {"t_s": 70,  "hr": 85,  "sbp": 99,  "dbp": 53, "map": 68, "spo2": 98},
+      {"t_s": 80,  "hr": 89,  "sbp": 94,  "dbp": 51, "map": 65, "spo2": 98},
+      {"t_s": 90,  "hr": 93,  "sbp": 90,  "dbp": 49, "map": 63, "spo2": 97},
+      {"t_s": 100, "hr": 96,  "sbp": 87,  "dbp": 47, "map": 60, "spo2": 97},
+      {"t_s": 110, "hr": 99,  "sbp": 84,  "dbp": 46, "map": 59, "spo2": 97},
+      {"t_s": 120, "hr": 102, "sbp": 81,  "dbp": 44, "map": 56, "spo2": 97},
+      {"t_s": 130, "hr": 105, "sbp": 79,  "dbp": 43, "map": 55, "spo2": 97},
+      {"t_s": 140, "hr": 107, "sbp": 77,  "dbp": 42, "map": 54, "spo2": 97},
+      {"t_s": 150, "hr": 109, "sbp": 75,  "dbp": 41, "map": 52, "spo2": 97}
+    ],
+    "nibp": [
+      {"source_id": "vit-nibp-01", "t_s": -180, "sbp": 120, "dbp": 66, "map": 84, "provenance": "simulated"}
+    ]
+  },
+  "drug_log": [
+    {"source_id": "drug-01", "t_s": -1500, "drug": "propofol", "detail": "TCI running, target 2.8 mcg/mL (effect site)", "provenance": "simulated"},
+    {"source_id": "drug-02", "t_s": -1500, "drug": "remifentanil", "detail": "TCI running, target 4.0 ng/mL", "provenance": "simulated"},
+    {"source_id": "drug-03", "t_s": -25, "drug": "propofol", "detail": "TCI target increased 2.8 to 3.2 mcg/mL (rate increase)", "provenance": "simulated"}
+  ],
+  "surgical_events": [
+    {"source_id": "surg-01", "t_s": 5,  "event": "Clip applier in view; clips applied", "tools": ["Grasper", "Clipper"], "provenance": "real footage; detector output"},
+    {"source_id": "surg-02", "t_s": 25, "event": "Scissors in view; structure divided", "tools": ["Grasper", "Scissors"], "provenance": "real footage; detector output"},
+    {"source_id": "surg-03", "t_s": 45, "event": "Suction/irrigator appears and stays in view (out of usual phase order)", "tools": ["Grasper", "Irrigator"], "provenance": "real footage; detector output"},
+    {"source_id": "surg-04", "t_s": 95, "event": "Bipolar forceps appears alongside the irrigator", "tools": ["Irrigator", "Bipolar"], "provenance": "real footage; detector output"}
+  ],
+  "agent_evidence": {
+    "surgical": ["phase: ClippingCutting", "surg-01", "surg-02", "surg-03", "surg-04", "Omni answer on last 10 s of video, if available"],
+    "anesthesia": ["vit-art", "vit-nibp-01", "drug-01", "drug-02", "drug-03"],
+    "record": ["meds-01", "hx-01", "lab-01", "lab-06", "lab-07", "note-01"]
+  },
+  "expected_hypotheses": {
+    "surgical": {"category": "bleeding_concern", "confidence": "medium", "gist": "Pressure began falling about 20 s after cutting, and suction/irrigation then bipolar appeared out of the usual order.", "cites": ["surg-02", "surg-03", "surg-04"]},
+    "anesthesia": {"category": "drug_effect", "confidence": "low", "gist": "Propofol target was raised about 70 s before the fall began; but HR is rising, which a propofol effect alone does not usually explain.", "cites": ["drug-03", "vit-art"]},
+    "record": {"category": "bleeding_concern", "confidence": "medium", "gist": "Patient takes apixaban, last dose about 19 h before incision; anti-Xa level not sent; pre-op Hb 11.2 g/dL.", "cites": ["meds-01", "lab-06", "lab-01"]}
+  },
+  "expected_convergence": {"converge": false, "outcome": "split",
+    "note": "Main demo beat (build plan section 6). Acceptable alternative: converged on bleeding_concern if the anesthesia agent moves to unclear in round 2."},
+  "expected_sentinel_output": {"alert": "banner (immediate, from code)",
+    "team_question": "Two explanations fit: possible bleeding (just after clipping and cutting; suction and bipolar now in use; apixaban 19 h ago) and drug effect (propofol increase about 85 s before the alert). Check the field for bleeding and confirm the drug timing.",
+    "must_not_contain": ["diagnosis", "treatment instruction", "risk percentage"]},
+  "baseline_rule": {
+    "rule": "Fixed BP rule: alarm if arterial MAP < 65 mmHg for >= 60 s (R1) or arterial SBP > 180 mmHg for >= 5 s (R2). Arterial-line numerics only, no context.",
+    "expected": "alarm", "fires": "R1", "fires_at_t_s": 141,
+    "correct": true,
+    "comment": "Right to alarm, but about 80 s after the trend began, and it gives no cause."
+  },
+  "scoring": {"alarm_needed": true, "correct_explanation_if": "bleeding_concern is shown (shared view or one side of a split)"}
+}

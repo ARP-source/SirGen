@@ -1,0 +1,22 @@
+from backend.metrics import BytesOutCounter, read_tx_bytes
+
+HEADER = "Inter-|   Receive |  Transmit\n face |bytes packets|bytes packets\n"
+
+
+def dev(lo, eth):
+    return (HEADER + f"    lo: 100 1 0 0 0 0 0 0 {lo} 1 0 0 0 0 0 0\n"
+            f"  eth0: 200 2 0 0 0 0 0 0 {eth} 2 0 0 0 0 0 0\n")
+
+
+def test_counts_non_loopback_tx_since_start(tmp_path):
+    p = tmp_path / "dev"
+    p.write_text(dev(1000, 5000))
+    c = BytesOutCounter(p)
+    assert c.read() == 0
+    p.write_text(dev(9000, 5600))
+    assert c.read() == 600  # loopback ignored
+
+
+def test_missing_proc_returns_none(tmp_path):
+    assert read_tx_bytes(tmp_path / "absent") is None
+    assert BytesOutCounter(tmp_path / "absent").read() is None

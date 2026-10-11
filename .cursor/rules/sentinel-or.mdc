@@ -1,0 +1,27 @@
+---
+description: Sentinel-OR always-on rules (stack, tests, honesty labels, what not to touch, how to talk to Raag)
+alwaysApply: true
+---
+
+# Sentinel-OR rules
+
+Start of every task: read `HANDOFF.md`. For build details, `CLAUDE.md` is the spec. Remaining work is in `MILESTONES.md`.
+
+**Talking to Raag.** He is not a deep developer and pastes commands. Lead with the answer, keep it short and plain, give one copy-paste command per step with what he should see. Run commands yourself when you can. Say exactly what you tested and what you did not.
+
+**Where it runs.** Everything runs on the ASUS GX10 (aarch64, CUDA 13). Ports: Lightning LLM 8000, Omni 8001, speech-to-text 8002, text-to-speech 8003, backend 7000 (FastAPI), frontend 5173 (Vite/React/TS).
+
+**Tests.** Before and after every change: `.venv/bin/python -m pytest -q` from the repo root, and `cd frontend && npx tsc --noEmit && npm run build`. Commit to git before each milestone.
+
+**Never break.**
+- No diagnosis, treatment instructions or risk percentages; confidence is low/medium/high only.
+- Every model sentence cites real `source_id`s; on failure retry once, then "Context unavailable. Source record remains available for review." No scripted text in place of model output.
+- Alerts and video never wait for models.
+- Keep every honesty label (simulated, time-shifted, "Recorded footage · Research prototype", "Draft for clinician review", Cholec80/VitalDB attribution).
+- Numbers shown or quoted are real measurements; `None` = not measured.
+- No internet or cloud APIs at runtime.
+- Say "tamper-evident", never "tamper-proof".
+
+**Do not touch.** `~/assets/`; running Docker containers (never `docker rm`, prune or restart Docker unless asked); the tmux window running `dev.sh`; files in `audit/`; do not import `backend/tests/fake_llm.py` in product code; do not loosen validation rules to make the model pass (fix prompts instead).
+
+**After finishing a milestone**, update the status table in `HANDOFF.md` with what now works, what you tested, and any new known issue.

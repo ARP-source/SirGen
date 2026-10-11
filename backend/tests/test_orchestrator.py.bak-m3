@@ -1,0 +1,381 @@
+"""M3 orchestrator against the TEST-ONLY fake_llm (no real model is involved anywhere here).
+
+These tests check plumbing and rules: concurrency, validation, retry-once, unavailable agents,
+convergence by code, cancellation, and that alerts never wait. They say nothing about how the
+real Lightning model behaves.
+"""
+import asyncio
+import json
+import re
+import time
+from pathlib import Path
+
+import pytest
+
+from backend.agents.orchestrator import Orchestrator
+from backend.state import CONTEXT_UNAVAILABLE
+
+from .conftest import make_stack
+from .fake_llm import FakeLLM
+
+REPO = Path(__file__).resolve().parents[2]
+EXPECTED = {  # outcome per scenario: README self-check table / scenario files
+    "true_bleed": ("split", None),
+    "drug_effect": ("converged", "drug_effect"),
+    "artifact": ("converged", "artifact"),
+}
+
+
+async def run_event(st, scenario_id):
+    st.fire()
+    if scenario_id == "artifact":  # the orchestrator waits for the recovery and the cuff reading
+        await asyncio.sleep(0.05)
+        assert st.state.deliberation.status == "waiting" and st.state.event.context_status == "pending"
+        assert st.fake.responses_sent == 0
+        st.player.clock = 76.0
+        st.player.tick(0.0)
+    await st.orch.join()
+
+
+@pytest.mark.parametrize("sid", list(EXPECTED))
+def test_scenarios_reach_expected_outcome(scenarios, sid):
+    async def go():
+        st = make_stack(scenarios, sid)
+        await run_event(st, sid)
+        d, outcome = st.state.deliberation, EXPECTED[sid]
+        assert (d.outcome, d.shared_category) == outcome
+        assert d.status == "done" and d.round == 2 and d.team_question and d.summary
+        assert st.state.event.context_status == "available"
+        assert all(s.state == "done" and s.message["round"] == 2 and s.round1["round"] == 1 for s in st.state.agents.values())
+        assert all(len(s.message["responds_to"]) == 2 for s in st.state.agents.values())
+        assert st.state.metrics.deliberation_s is not None and 0 < st.state.metrics.deliberation_s < 5
+        # context and agents are in the timeline too
+        assert any(i.kind == "context" and i.label.startswith("context available") for i in st.state.timeline)
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_true_bleed_split_shows_both_sides_and_template_question(scenarios):
+    async def go():
+        st = make_stack(scenarios, "true_bleed")
+        await run_event(st, "true_bleed")
+        d = st.state.deliberation
+        assert d.team_question.startswith("Two explanations fit: possible bleeding (") and "drug effect (" in d.team_question
+        assert d.team_question.endswith("Check the field for bleeding and confirm the drug timing.")
+        assert [s["category"] for s in d.sides] == ["bleeding_concern", "drug_effect"]
+        assert set(d.question_source_ids) >= {"surg-02", "meds-01", "drug-03", "vit-art"}
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_requests_follow_the_prompt_readme(scenarios):
+    async def go():
+        st = make_stack(scenarios, "true_bleed")
+        await run_event(st, "true_bleed")
+        log = st.fake.log
+        assert len(log) == 6  # 3 agents x 2 rounds, no retries
+        for r in log:
+            b = r["body"]
+            assert b["temperature"] == 0.2 and b["chat_template_kwargs"] == {"enable_thinking": False}
+            assert b["max_tokens"] == (200 if r["round"] == 1 else 256)
+            assert b["model"] == "fake-lightning-test"  # resolved from /v1/models
+            assert b["response_format"]["type"] == "json_schema" and b["response_format"]["json_schema"]["strict"] is True
+            prompt = (REPO / "prompts" / f"{r['agent']}.md").read_text()
+            assert r["system"] == prompt  # system message verbatim
+            assert [l.split(":")[0] for l in r["user"].splitlines()] == (
+                ["ROUND", "EVENT", "EVIDENCE", "ALLOWED_SOURCE_IDS"] + (["OTHER_AGENTS"] if r["round"] == 2 else []))
+            allowed = json.loads(r["labels"]["ALLOWED_SOURCE_IDS"])
+            assert b["response_format"]["json_schema"]["schema"]["properties"]["evidence"]["items"]["properties"]["source_id"]["enum"] == allowed
+        # each agent only sees its own evidence block
+        anes = st.fake.requests_for("anesthesia", 1)[0]["user"]
+        rec = st.fake.requests_for("record", 1)[0]["user"]
+        surg = st.fake.requests_for("surgical", 1)[0]["user"]
+        assert "drug-03" in anes and "drug-03" not in rec and "drug-03" not in surg
+        assert "meds-01" in rec and "meds-01" not in anes and "meds-01" not in surg
+        assert "surg-02" in surg and "surg-02" not in anes and "surg-02" not in rec
+        # round 2: the other two round-1 messages, and nothing else
+        r2 = st.fake.requests_for("record", 2)[0]["labels"]["OTHER_AGENTS"]
+        others = json.loads(r2)
+        assert [o["agent"] for o in others] == ["surgical", "anesthesia"] and all(o["round"] == 1 for o in others)
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_round_one_agents_run_concurrently(scenarios):
+    async def go():
+        st = make_stack(scenarios, "drug_effect", delay_s=0.3)
+        t0 = time.perf_counter()
+        st.fire()
+        await st.orch.join()
+        elapsed = time.perf_counter() - t0
+        assert elapsed < 0.3 * 2 + 0.25  # two sequential rounds of 0.3 s, not six
+        r1 = st.fake.log[:3]
+        assert {r["agent"] for r in r1} == {"surgical", "anesthesia", "record"}
+        # all three round-1 requests arrived before any round-1 response was sent
+        assert max(r["received_at"] for r in r1) < min(r["responded_at"] for r in r1)
+        assert st.state.metrics.deliberation_s == pytest.approx(elapsed, abs=0.1)  # a real measurement
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_state_updates_as_messages_arrive_round1_before_round2(scenarios):
+    async def go():
+        st = make_stack(scenarios, "true_bleed", delay_s=0.2)
+        seen = []
+        orig = st.store.update
+
+        def spy(urgent=False, **fields):
+            if "agents" in fields:
+                seen.append({a: (s.state, (s.message or {}).get("round")) for a, s in fields["agents"].items()})
+            return orig(urgent=urgent, **fields)
+        st.store.update = spy
+        st.fire()
+        await asyncio.sleep(0.05)
+        assert all(s.state == "thinking" and s.message is None for s in st.state.agents.values())
+        assert st.state.deliberation.round == 1 and st.state.deliberation.outcome == "pending"
+        assert st.state.event.context_status == "pending"
+        await asyncio.sleep(0.3)  # round 1 has arrived, round 2 is in flight
+        assert all(s.message["round"] == 1 for s in st.state.agents.values()) and st.state.deliberation.round == 2
+        assert st.state.deliberation.outcome == "pending" and st.state.event.context_status == "pending"
+        await st.orch.join()
+        rounds = [tuple(v[1] for v in snap.values()) for snap in seen]
+        assert (1, 1, 1) in rounds and rounds.index((1, 1, 1)) < rounds.index((2, 2, 2))
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_invalid_source_id_retries_once_then_unavailable_without_canned_text(scenarios):
+    async def go():
+        st = make_stack(scenarios, "true_bleed")
+        st.fake.fail("record", "bad_source_id")  # always cites lab-99
+        await run_event(st, "true_bleed")
+        slot = st.state.agents["record"]
+        assert slot.state == "unavailable" and slot.message is None and slot.round1 is None
+        assert "unknown source_id: lab-99" in slot.reason and "one retry" in slot.reason
+        assert len(st.fake.requests_for("record")) == 2  # first try + exactly one retry, no round 2
+        assert slot.attempts == 2
+        # nothing was written in place of the failed output
+        dumped = st.store.snapshot_json()
+        assert "lab-99" not in dumped.replace(slot.reason, "")
+        # the other two still deliberated; the unavailable agent counts as unclear, so this is a split of one source
+        d = st.state.deliberation
+        assert d.unavailable_agents == ["record"] and d.status == "done"
+        assert st.state.agents["surgical"].message["round"] == 2 and st.state.agents["anesthesia"].message["round"] == 2
+        assert [r["status"] for r in json.loads(st.fake.requests_for("surgical", 2)[0]["labels"]["OTHER_AGENTS"]) if "status" in r] == ["unavailable"]
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_one_bad_output_then_good_is_accepted_on_retry(scenarios):
+    async def go():
+        st = make_stack(scenarios, "drug_effect")
+        st.fake.fail("anesthesia", "bad_source_id", times=1)
+        st.fire()
+        await st.orch.join()
+        slot = st.state.agents["anesthesia"]
+        assert slot.state == "done" and slot.attempts == 1 and slot.message["round"] == 2
+        assert len(st.fake.requests_for("anesthesia", 1)) == 2  # one retry in round 1
+        assert st.state.deliberation.outcome == "converged"
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+@pytest.mark.parametrize("mode", ["banned", "length", "http500"])
+def test_other_validation_failures_are_retried_once_then_unavailable(scenarios, mode):
+    async def go():
+        st = make_stack(scenarios, "drug_effect")
+        st.fake.fail("surgical", mode)
+        st.fire()
+        await st.orch.join()
+        assert st.state.agents["surgical"].state == "unavailable" and st.state.agents["surgical"].reason
+        assert len(st.fake.requests_for("surgical")) == 2
+        assert st.state.deliberation.status == "done"  # the other two carried on
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_timeout_marks_agent_unavailable_and_the_others_complete(scenarios):
+    async def go():
+        st = make_stack(scenarios, "drug_effect", timeout_s=0.4)
+        st.fake.fail("record", "hang")
+        t0 = time.perf_counter()
+        st.fire()
+        await st.orch.join()
+        assert time.perf_counter() - t0 < 1.5
+        rec = st.state.agents["record"]
+        assert rec.state == "unavailable" and "timed out" in rec.reason and rec.message is None
+        assert len(st.fake.requests_for("record")) == 1  # no retry on a timeout: the budget is spent
+        for a in ("surgical", "anesthesia"):
+            assert st.state.agents[a].state == "done" and st.state.agents[a].message["round"] == 2
+        d = st.state.deliberation
+        assert d.status == "done" and d.unavailable_agents == ["record"]
+        assert (d.outcome, d.shared_category) == ("split", None)  # drug_effect alone vs unclear, unclear
+        assert st.state.event.context_status == "available" and "record" in st.state.event.context_note
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_all_agents_down_shows_context_unavailable(scenarios):
+    async def go():
+        # nothing listens at this URL: connection error, not a timeout
+        from backend.agents.llm_client import LightningClient
+        st = make_stack(scenarios, "true_bleed")
+        st.orch.client = LightningClient(base_url="http://127.0.0.1:9/v1", model="m", timeout_s=2)
+        st.fire()
+        await st.orch.join()
+        assert all(s.state == "unavailable" and "cannot reach" in s.reason for s in st.state.agents.values())
+        assert st.state.deliberation.status == "unavailable" and st.state.deliberation.outcome is None
+        assert st.state.deliberation.team_question is None
+        assert st.state.event.context_status == "unavailable"
+        assert st.state.labels.context_unavailable == CONTEXT_UNAVAILABLE
+        assert st.state.metrics.deliberation_s is None  # nothing was deliberated: not measured
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+@pytest.mark.parametrize("how", ["reset", "restart", "scenario"])
+def test_reset_restart_and_scenario_switch_cancel_a_running_deliberation(scenarios, how):
+    async def go():
+        st = make_stack(scenarios, "true_bleed", delay_s=0.4)
+        st.fire()
+        await asyncio.sleep(0.1)
+        task = st.orch.task
+        assert task is not None and not task.done() and st.state.agents["surgical"].state == "thinking"
+        if how == "reset":
+            st.player.reset()
+        elif how == "restart":
+            st.player.restart()
+        else:
+            st.player.select("drug_effect")
+        assert st.orch.status == "idle"  # immediately
+        await asyncio.sleep(0.05)
+        assert task.cancelled()
+        assert all(s.state == "idle" and s.message is None for s in st.state.agents.values())
+        d = st.state.deliberation
+        assert (d.status, d.round, d.outcome, d.team_question) == ("idle: waits for an event", 0, None, None)
+        assert st.state.event is None and st.state.metrics.deliberation_s is None
+        await asyncio.sleep(0.7)  # the late "responses" must not land in the state
+        assert all(s.message is None for s in st.state.agents.values()) and st.state.deliberation.outcome is None
+        assert st.state.event is None
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_reset_while_waiting_for_art_spike_cancels(scenarios):
+    async def go():
+        st = make_stack(scenarios, "artifact")
+        st.fire()
+        await asyncio.sleep(0.05)
+        task = st.orch.task
+        st.player.reset()
+        await asyncio.sleep(0.05)
+        assert task.cancelled() and st.fake.responses_sent == 0
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_alert_is_published_before_any_model_response_and_a_slow_llm_does_not_delay_it(scenarios):
+    async def go():
+        st = make_stack(scenarios, "true_bleed", delay_s=1.0)  # a very slow model
+        q = st.store.subscribe()
+        q.get_nowait()
+        t0 = time.perf_counter()
+        st.fire()
+        returned_after = time.perf_counter() - t0
+        snap = json.loads(q.get_nowait())  # the last urgent publish
+        ev = snap["event"]
+        assert ev["alert_shown_at"] is not None and ev["alert_text"].startswith("SIMULATED TELEMETRY ALERT")
+        assert ev["context_status"] == "pending"
+        assert all(a["message"] is None and a["state"] == "idle" for a in snap["agents"].values())
+        assert st.fake.responses_sent == 0 and len(st.fake.log) == 0
+        ms = st.state.event.event_to_alert_ms
+        assert ms is not None and ms < 50 and returned_after < 0.25  # the tick returned long before any model
+        await asyncio.sleep(1.4)
+        assert st.fake.first_response_at is not None  # responses only came later
+        await st.orch.join()
+        assert st.state.deliberation.outcome == "split"
+        # the alert is unchanged by the model: same event_to_alert_ms as at publication
+        assert st.state.event.event_to_alert_ms == ms
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_art_spike_waits_for_recovery_and_cuff_reading(scenarios):
+    async def go():
+        st = make_stack(scenarios, "artifact")
+        st.fire()  # alert at t 50
+        await asyncio.sleep(0.1)
+        assert st.fake.responses_sent == 0 and len(st.fake.log) == 0
+        assert st.state.event.context_status == "pending" and "cuff" in st.state.event.context_note
+        st.player.clock = 62.0  # recovered (t 59) but the cuff reading is at t 75
+        st.player.tick(0.0)
+        await asyncio.sleep(0.1)
+        assert len(st.fake.log) == 0
+        st.player.clock = 76.0
+        st.player.tick(0.0)
+        await st.orch.join()
+        anes = json.loads(st.fake.requests_for("anesthesia", 1)[0]["labels"]["EVIDENCE"])
+        assert anes["cuff"][-1]["source_id"] == "vit-nibp-02" and anes["vitals"]["summary"]["sbp_back_near_baseline_after_s"] == 9
+        assert st.state.deliberation.shared_category == "artifact" and st.state.event.alert_level == "quiet"
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_art_spike_gives_up_waiting_when_no_cuff_reading_ever_comes(scenarios):
+    async def go():
+        st = make_stack(scenarios, "artifact", spike_max_wait_s=5.0)
+        st.fire(at=50.0)
+        st.player.clock = 56.0  # 6 s later: past the wait limit, recovery not even done
+        st.player.tick(0.0)
+        await st.orch.join()
+        assert st.state.deliberation.status in ("done", "unavailable") and len(st.fake.log) >= 3
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_presenter_trigger_runs_a_deliberation_too(scenarios):
+    async def go():
+        st = make_stack(scenarios, "drug_effect")
+        st.player.clock = 20.0
+        ev = st.player.trigger()
+        assert ev.context_status == "pending"
+        await st.orch.join()
+        assert st.state.event.trigger == "presenter" and st.state.deliberation.status == "done"
+        trig = json.loads(st.fake.log[0]["labels"]["EVENT"])["trigger"]
+        assert "presenter's manual trigger" in trig
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_second_event_supersedes_the_first(scenarios):
+    async def go():
+        st = make_stack(scenarios, "drug_effect", delay_s=0.3)
+        st.fire()
+        await asyncio.sleep(0.05)
+        first = st.orch.task
+        st.player.trigger()
+        await asyncio.sleep(0.05)
+        assert first.cancelled()
+        await st.orch.join()
+        assert st.state.event.event_id == "ev-2" and st.state.deliberation.status == "done"
+        await st.orch.aclose()
+    asyncio.run(go())
+
+
+def test_no_scripted_text_in_product_code_and_fake_llm_is_not_imported_by_it():
+    product = [p for p in (REPO / "backend").rglob("*.py") if "tests" not in p.parts]
+    assert product
+    for p in product:
+        src = p.read_text()
+        assert "fake_llm" not in src and "FakeLLM" not in src, p
+    for p in (REPO / "backend" / "agents").glob("*.py"):  # no canned agent hypotheses in the agent package
+        assert not re.search(r"expected_hypotheses|gist", p.read_text()), p
+
+
+def test_unreadable_prompt_fails_loudly(scenarios, tmp_path):
+    async def go():
+        st = make_stack(scenarios, "true_bleed")
+        with pytest.raises(FileNotFoundError):
+            Orchestrator(st.store, st.player, {}, {}, client=st.client, prompts_dir=tmp_path)
+        await st.client.aclose()
+    asyncio.run(go())

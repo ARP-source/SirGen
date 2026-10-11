@@ -1,0 +1,9 @@
+# Pinned to the versions the M1 skeleton was built and tested with (pip show).
+fastapi==0.143.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.0
+httpx==0.28.1
+numpy==2.4.6
+opencv-python-headless==5.0.0.93
+pandas==3.0.6
+pytest==9.1.1
