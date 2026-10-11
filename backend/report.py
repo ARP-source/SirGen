@@ -32,6 +32,7 @@ from .agents.llm_client import LightningClient, LLMBadResponse, LLMError, LLMTim
 from .agents.schemas import BANNED_PATTERNS
 from .audit import AuditLog, Verification
 from .state import ATTRIBUTION, COMPOSITE_LABEL, CONTEXT_UNAVAILABLE
+from .surgery_log import SurgeryLog, build_surgery_log
 
 log = logging.getLogger("sentinel.report")
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -42,6 +43,13 @@ MAX_SENTENCE_CHARS = 300
 NARRATIVE_MAX_TOKENS = 450
 _BANNED = [re.compile(p, re.IGNORECASE) for p in BANNED_PATTERNS]
 _NUM = re.compile(r"\d+(?:\.\d+)?")
+# A sentence on one of these topics must cite at least one entry of a matching log kind.
+_TOPICS = [
+    (re.compile(r"\b(video|critical view|cvs|deviat\w*|procedure steps?)\b", re.IGNORECASE),
+     ("| video_event |", "| deviation |", "| phase_change |")),
+    (re.compile(r"\bagents?\b|\bagreed\b|\bdisagreed\b|\bconverged\b", re.IGNORECASE),
+     ("| agent_message |", "| agent_unavailable |", "| deliberation_result |")),
+]
 AGENTS = ("surgical", "anesthesia", "record")
 
 
@@ -158,6 +166,8 @@ def fact_lines(f: Facts, chart: dict[str, dict[str, Any]]) -> dict[str, str]:
         lines[e["id"]] = f"{t_label(e['clock_s'])} | {e['kind']} | {e['actor']} | {e['summary']}"
         if e["kind"] == "alert":
             v = e["data"].get("vitals", {})
+            if e["data"].get("alert_text"):
+                lines[e["id"]] += f" | alert text: {e['data']['alert_text']}"
             lines[e["id"]] += (f" | vitals at alert: HR {v.get('hr')}, SBP {v.get('sbp')}, DBP {v.get('dbp')}, "
                                f"MAP {v.get('map')}, SpO2 {v.get('spo2')}")
         if e["kind"] == "agent_message":
@@ -206,6 +216,11 @@ def check_narrative(text: str, lines: dict[str, str]) -> list[dict[str, Any]]:
         for pat in _BANNED:
             if pat.search(t):
                 raise InvalidNarrative(f"banned wording in sentence {i}: /{pat.pattern}/")
+        cited_text = " ".join(lines[c] for c in cites)
+        for pat, kinds in _TOPICS:
+            m = pat.search(t)
+            if m and not any(k in cited_text for k in kinds):
+                raise InvalidNarrative(f"sentence {i} mentions '{m.group(0)}' without citing an entry about it")
         allowed_numbers = {float(n) for n in _NUM.findall(" ".join(lines[c] for c in cites))}
         stray = [n for n in _NUM.findall(t) if float(n) not in allowed_numbers]
         if stray:
@@ -258,6 +273,7 @@ class Report:
     narrative_ms: Optional[float]
     aftercare: Optional[Aftercare] = None
     coding: Optional[Coding] = None
+    surgery: Optional[SurgeryLog] = None
     html_text: str = ""
     sha256: str = ""
 
@@ -269,7 +285,11 @@ class Report:
                 "video_events": len(self.facts.video),
                 "review_items": len(self.aftercare.review) if self.aftercare else None,
                 "medications_to_decide": len(self.aftercare.meds) if self.aftercare else None,
-                "codes": [c.code for c in self.coding.rows] if self.coding else []}
+                "codes": [c.code for c in self.coding.rows] if self.coding else [],
+                "steps": [s.display for s in self.surgery.steps] if self.surgery else [],
+                "deviations": len(self.surgery.deviations) if self.surgery else 0,
+                "cvs_seen_at_s": self.surgery.cvs["seen_at_s"] if self.surgery else None,
+                "length_s": self.surgery.length_s if self.surgery else None}
 
 
 def _e(x: Any) -> str:
@@ -286,6 +306,71 @@ def _table(head: list[str], rows: list[list[str]], empty: str) -> str:
     th = "".join(f"<th>{_e(h)}</th>" for h in head)
     tr = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
     return f"<table><thead><tr>{th}</tr></thead><tbody>{tr}</tbody></table>"
+
+
+def _dur(s: Optional[float]) -> str:
+    if s is None:
+        return "not recorded"
+    m, sec = divmod(int(round(s)), 60)
+    return f"{m} min {sec:02d} s" if m else f"{sec} s"
+
+
+def _surgery_summary(s: SurgeryLog) -> str:
+    out: list[str] = ["<h3 style='font-size:14px;margin:12px 0 4px'>Surgery summary (computed from the log)</h3><ul>"]
+    li = lambda x: out.append(f"<li>{x}</li>")  # noqa: E731
+    li(f"Length logged: {_e(_dur(s.length_s))}.")
+    if s.steps:
+        li("Steps, in the order logged: " + _e(" → ".join(st.display for st in s.steps)) + ".")
+    else:
+        li("No procedure step was logged.")
+    if s.not_observed:
+        li("Usual steps not logged in this run: " + _e(", ".join(s.not_observed)) + ".")
+    if s.out_of_usual_order:
+        li("Logged out of the usual order: " + _e(", ".join(s.out_of_usual_order))
+           + ". Step order can vary between operations; this is not by itself a mistake.")
+    if s.cvs["seen_at_s"] is not None:
+        li(f"Critical View of Safety seen on video at {_e(t_label(s.cvs['seen_at_s']))} "
+           f"<span class='ref'>{_e(s.cvs['log_id'])}</span>.")
+    elif s.cvs["criteria"]:
+        li(f"Critical View of Safety not seen on video ({len(set(s.cvs['criteria']))} of 3 criteria seen at some point).")
+    else:
+        li("Critical View of Safety not seen on video, or the CVS model was not running.")
+    if s.first_cut:
+        li(f"First clip or cut: {_e(s.first_cut['what'])} at {_e(t_label(s.first_cut['clock_s']))} "
+           f"<span class='ref'>{_e(s.first_cut['log_id'])}</span>.")
+    if s.deviations:
+        li(f"<span class='bad'>{len(s.deviations)} deviation{'s' if len(s.deviations) != 1 else ''} from the expected "
+           "procedure</span> logged by the video models: " + "; ".join(
+               f"{_e(d['what'])} at {_e(t_label(d['clock_s']))} <span class='ref'>{_e(d['log_id'])}</span>"
+               for d in s.deviations) + ".")
+    else:
+        li("No deviation from the expected procedure was logged by the video models.")
+    if s.alerts:
+        li(f"{len(s.alerts)} alert{'s' if len(s.alerts) != 1 else ''}: " + "; ".join(
+            f"{_e(x['what'])} at {_e(t_label(x['clock_s']))}, outcome {_e(x['outcome'] or 'not logged')} "
+            f"<span class='ref'>{_e(x['log_id'])}</span>" for x in s.alerts) + ".")
+    else:
+        li("No alert fired.")
+    li(f"{s.drugs} drug log entr{'ies' if s.drugs != 1 else 'y'}. Video service: {_e(s.vision)}.")
+    out.append("</ul>")
+    out.append("<h3 style='font-size:14px;margin:12px 0 4px'>Steps</h3>")
+    out.append(_table(["Log", "Step", "Start", "End", "Duration", "Instruments seen", "Deviations", "Alerts", "Set by"],
+                      [[_ref({"id": st.log_id}), _e(st.display), _e(t_label(st.start_s)), _e(t_label(st.end_s)),
+                        _e(_dur(st.duration_s)), _e(", ".join(st.instruments) or "none logged"),
+                        f"<span class='bad'>{st.deviations}</span>" if st.deviations else "0", _e(st.alerts),
+                        _e(st.set_by)] for st in s.steps],
+                      "No step changes were logged in this run."))
+    out.append("<p class='small'>Steps come from the phase heuristic over the instruments detected on video, or from "
+               "the presenter when marked so. \"Not logged\" means the system did not log the step, not that it did not happen.</p>")
+    return "".join(out)
+
+
+def _surgery_log(s: SurgeryLog) -> str:
+    rows = [[_ref({"id": x.log_id}), _e(t_label(x.clock_s)), _e(x.step), _e(x.kind),
+             (f"<span class='bad'>{_e(x.flag)}</span> " if x.flag else "") + _e(x.what), _e(x.by)] for x in s.rows]
+    return ("<h2>Surgery log (step by step)</h2><p class='small'>Everything the system observed, said and was told during "
+            "the run, in time order, with the step it fell in. Instrument entries are summarised per step above.</p>"
+            + _table(["Log", "Time", "Step", "Kind", "What", "By"], rows, "Nothing was logged in this run."))
 
 
 def render_html(r: Report) -> str:
@@ -313,11 +398,14 @@ def render_html(r: Report) -> str:
       f"Segment length {_e(sc.get('duration_s'))} s. Vitals source: {_e(sc.get('vitals_source'))} "
       f"({_e(sc.get('vitals_source_kind'))}).</p>")
     a(f"<p class='small'>{_e(ATTRIBUTION)}</p>")
-    a("<h3 style='font-size:14px;margin:12px 0 4px'>Procedure steps seen</h3>")
-    a(_table(["Log", "Time", "Step", "Set by"],
-             [[_ref(e), _e(t_label(e["clock_s"])), _e(e["data"].get("display") or e["data"].get("name")),
-               _e(e["data"].get("set_by") or e["actor"])] for e in f.phases],
-             "No step changes were logged in this run."))
+    if r.surgery is not None:
+        a(_surgery_summary(r.surgery))
+    else:
+        a("<h3 style='font-size:14px;margin:12px 0 4px'>Procedure steps seen</h3>")
+        a(_table(["Log", "Time", "Step", "Set by"],
+                 [[_ref(e), _e(t_label(e["clock_s"])), _e(e["data"].get("display") or e["data"].get("name")),
+                   _e(e["data"].get("set_by") or e["actor"])] for e in f.phases],
+                 "No step changes were logged in this run."))
 
     a("<h2>Summary (written by the local model)</h2>")
     if r.narrative:
@@ -376,6 +464,9 @@ def render_html(r: Report) -> str:
                "<span class='bad'>deviation</span>" if e["kind"] == "deviation" else _e(str(e["data"].get("kind", "")).replace("_", " ")),
                _e(e["summary"])] for e in f.video],
              "No video-model events were logged in this run (vision service not running or nothing seen)."))
+
+    if r.surgery is not None:
+        a(_surgery_log(r.surgery))
 
     a("<h2>Medications given (drug log)</h2>")
     a(_table(["Log", "Time", "Drug", "Detail", "Chart id", "Provenance"],
@@ -471,6 +562,7 @@ async def generate(audit: AuditLog, client: LightningClient, patient: dict[str, 
                     verification=verification, narrative=sentences, narrative_note=note, narrative_ms=ms)
     ddir = data_dir or DATA_DIR
     ac_ref, cmap = _load(ddir / "procedure" / "lap_chole_aftercare.json"), _load(ddir / "billing" / "coding_map.json")
+    report.surgery = build_surgery_log(facts.entries, _load(ddir / "procedure" / "lap_chole_steps.json"))
     if ac_ref is not None:
         report.aftercare = build_aftercare(patient, ac_ref, facts.entries)
     if cmap is not None:

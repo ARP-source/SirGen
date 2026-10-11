@@ -41,6 +41,8 @@ export default function PostOp() {
         {summary && (
           <> · report covers run {summary.run}, entries {summary.covers_entries[0]} to {summary.covers_entries[1]} · summary {summary.narrative}
             {summary.narrative_ms ? ` in ${(summary.narrative_ms / 1000).toFixed(1)} s` : ''}
+            {summary.steps && ` · ${summary.steps.length} steps logged`}
+            {summary.deviations != null && ` · ${summary.deviations} deviation${summary.deviations === 1 ? '' : 's'}`}
             {summary.video_events != null && ` · ${summary.video_events} video events`}
             {summary.review_items != null && ` · ${summary.review_items} items to review`}
             {summary.medications_to_decide != null && ` · ${summary.medications_to_decide} medications to decide`}

@@ -154,6 +154,10 @@ export interface ReportSummary {
   review_items?: number | null
   medications_to_decide?: number | null
   codes?: string[]
+  steps?: string[]
+  deviations?: number
+  cvs_seen_at_s?: number | null
+  length_s?: number | null
 }
 
 export interface SentinelState {

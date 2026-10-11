@@ -112,6 +112,9 @@ def test_narrative_validation_rules(scenarios, tmp_path):
             "invented number": {"text": "MAP fell to 31337.", "cites": [alert_id]},
             "banned wording": {"text": "You should recommend a transfusion.", "cites": [alert_id]},
             "too long": {"text": "x" * 400, "cites": [alert_id]},
+            "video claim citing an alert": {"text": "The video model logged the Critical View of Safety.", "cites": [alert_id]},
+            "agent claim citing an alert": {"text": "The anesthesia agent suggested a drug effect.", "cites": [alert_id]},
+            "step claim citing an alert": {"text": "The procedure step changed to clipping.", "cites": [alert_id]},
         }
         for name, s in cases.items():
             try:
