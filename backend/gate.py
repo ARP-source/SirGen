@@ -9,9 +9,9 @@ released when OPEN, or when the surgeon asks. Urgent speech (demo thresholds:
 MAP < 55 mmHg or SpO2 < 90 %) is never held. The visual alert banner is not gated
 (hard rule 3).
 
-Tools come from a live detector via `set_live_tools()` when M2 is running; otherwise
-from `instrument_timeline` in the scenario (falling back to `surgical_events`).
-The on-screen `basis` label always says which.
+Tools come only from the live detector via `set_live_tools()`. With no recent model
+result the instruments are unknown, the gate stays open and the on-screen `basis`
+label says the detector is unavailable.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ LogFn = Callable[..., Any]
 class SpeechItem(BaseModel):
     id: str
     text: str
-    kind: Literal["team_question", "shared_view", "urgent_vitals"]
+    kind: Literal["team_question", "shared_view", "urgent_vitals", "safety_check"]
     urgent: bool = False
     created_t: float
     spoken_t: Optional[float] = None
@@ -51,7 +51,7 @@ class GateView(BaseModel):
     settling: bool = False
     instrument: Optional[str] = None
     tools: list[str] = Field(default_factory=list)
-    basis: str = "scenario timeline (no live detector yet)"
+    basis: str = "detector unavailable: instruments unknown"
     settle_remaining_s: float = 0.0
     chip: str = "Clear to speak"
     thresholds_note: str = "Urgent speech demo thresholds: MAP < 55 mmHg or SpO2 < 90 %. Not clinical."
@@ -73,21 +73,14 @@ def hold_instrument(tools: list[str]) -> Optional[str]:
     return None
 
 
-def tools_at(raw: dict[str, Any], clock_s: float,
-             live_tools: Optional[list[str]] = None) -> tuple[list[str], str]:
-    """Resolve the instrument list at `clock_s`. Live detector wins when it has been set."""
-    if live_tools is not None:
-        return list(live_tools), "live detector"
-    timeline = raw.get("instrument_timeline") or []
-    events = timeline if timeline else raw.get("surgical_events") or []
-    tools: list[str] = []
-    for ev in events:
-        t = ev.get("t_s")
-        if t is None or float(t) <= clock_s:
-            tools = list(ev.get("tools") or [])
-    if timeline:
-        return tools, "scenario timeline (no live detector yet)"
-    return tools, "scenario surgical events (no live detector yet)"
+DETECTOR_UNAVAILABLE = "detector unavailable: instruments unknown"
+
+
+def tools_at(live_tools: Optional[list[str]]) -> tuple[list[str], str]:
+    """Instruments from the live detector only. None means no recent model result."""
+    if live_tools is None:
+        return [], DETECTOR_UNAVAILABLE
+    return sorted(live_tools), "live detector"
 
 
 class SpeechGate:
@@ -106,11 +99,11 @@ class SpeechGate:
         self._clear_since: Optional[float] = None
         self._urgent_active = False
         self._tools: list[str] = []
-        self._basis = "scenario timeline (no live detector yet)"
+        self._basis = DETECTOR_UNAVAILABLE
         self._clock = 0.0
 
     def set_live_tools(self, tools: Optional[list[str]]) -> None:
-        """M2 calls this with the current boxes. Pass None when the detector is down."""
+        """Instruments from the live scene. Pass None when the detector is down."""
         self.live_tools = None if tools is None else list(tools)
 
     def on_clock(self, clock_s: float, tools: list[str], basis: str,
@@ -132,12 +125,13 @@ class SpeechGate:
                 self._release("instruments withdrawn")
         self._maybe_urgent(map_, spo2)
 
-    def offer(self, text: str, kind: Literal["team_question", "shared_view", "urgent_vitals"] = "team_question",
+    def offer(self, text: str, kind: Literal["team_question", "shared_view", "urgent_vitals", "safety_check"] = "team_question",
               urgent: bool = False) -> SpeechItem:
         self._seq += 1
         item = SpeechItem(id=f"sp-{self._seq}", text=text, kind=kind, urgent=urgent, created_t=round(self._clock, 2))
         if urgent or self.status == "open":
-            reason = "urgent (demo threshold)" if urgent else "clear to speak"
+            reason = ("safety check before clip or cut (not held)" if kind == "safety_check"
+                      else "urgent (demo threshold)") if urgent else "clear to speak"
             self._speak(item, reason)
             if urgent:
                 self._record("speech_urgent", f"urgent speech (not held): {text}",

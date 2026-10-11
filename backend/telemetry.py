@@ -14,6 +14,7 @@ from typing import Optional, Protocol
 from .audit import AuditLog
 from .gate import SpeechGate, tools_at
 from .scenario import Scenario
+from .scene import LiveScene
 from .state import (
     AGENTS_NOT_ATTACHED, Baseline, DrugEntry, Event, NibpEntry, ScenarioInfo, StateStore,
     TimelineItem, Vitals, footage_text,
@@ -72,12 +73,15 @@ class ScenarioPlayer:
     """Owns the scenario clock. All state changes go through the StateStore."""
 
     def __init__(self, store: StateStore, scenarios: dict[str, Scenario],
-                 video: Optional[VideoControl] = None, initial: Optional[str] = None) -> None:
+                 video: Optional[VideoControl] = None, initial: Optional[str] = None,
+                 scene: Optional[LiveScene] = None) -> None:
         if not scenarios:
             raise ValueError("no scenarios loaded")
         self.store = store
         self.scenarios = scenarios
         self.video = video
+        self.scene = scene
+        self._deviations_seen = 0
         self._event_seq = 0
         self.listener: Optional[EventListener] = None
         self.audit: Optional[AuditLog] = None  # attached by attach_audit(); None in unit tests
@@ -160,6 +164,9 @@ class ScenarioPlayer:
         while self._next_second <= int(self.clock):
             self._process_second(self._next_second)
             self._next_second += 1
+        if self.scene is not None:
+            self.scene.step(self.clock, time.monotonic())
+            self._announce_deviations()
         self._sync()
         ev_t = self.scenario.event_t_s
         if ev_t is not None and not self._scheduled_fired and self.clock >= ev_t:
@@ -199,6 +206,9 @@ class ScenarioPlayer:
         if self.listener is not None:
             self.listener.on_reset()  # cancels a running deliberation, clears agents/deliberation
         self.gate.reset()
+        if self.scene is not None:
+            self.scene.reset()
+        self._deviations_seen = 0
         self.clock = 0.0
         self.playing = False
         self.ended = False
@@ -291,14 +301,34 @@ class ScenarioPlayer:
         drugs, nibp = self._visible_drugs(), self._visible_nibp()
         self._log_new_sources(drugs, nibp)
         vitals = self._vitals()
-        tools, basis = tools_at(self.scenario.raw, self.clock, live_tools=self.gate.live_tools)
+        scene_fields = {}
+        if self.scene is not None:
+            now = time.monotonic()
+            live = self.scene.current_tools(now)
+            self.gate.set_live_tools(None if live is None else sorted(live))
+            scene_fields = {"scene": self.scene.view(now), "phase": self.scene.phase_state(now)}
+        tools, basis = tools_at(self.gate.live_tools)
         self.gate.on_clock(self.clock, tools, basis, map_=vitals.map, spo2=vitals.spo2)
         return self.store.update(
             urgent=urgent, clock_s=round(self.clock, 2), playing=self.playing, ended=self.ended,
             vitals=vitals, drug_log=drugs, nibp=nibp,
             baseline=self._baseline_state(), event=self._event, timeline=list(self._timeline),
-            gate=self.gate.view(), speech=self.gate.speech_view(),
+            gate=self.gate.view(), speech=self.gate.speech_view(), **scene_fields,
         )
+
+    def _announce_deviations(self) -> None:
+        """A clip or cut seen before the Critical View of Safety is spoken at once: it is only
+        useful before the clip closes, so it is never held by the gate."""
+        devs = self.scene.deviations if self.scene is not None else []
+        for d in devs[self._deviations_seen:]:
+            self._add_timeline("video", f"deviation: {d.text}", t_s=d.t_s)
+            self.offer_speech(f"Check: {d.text}.", kind="safety_check", urgent=True)
+        self._deviations_seen = len(devs)
+
+    def force_phase(self, name: str) -> None:
+        if self.scene is not None:
+            self.scene.force_phase(name, self.clock)
+        self._sync(urgent=True)
 
     def _alert_text(self) -> str:
         s = self.scenario.series

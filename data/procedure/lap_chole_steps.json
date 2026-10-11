@@ -1,0 +1,58 @@
+{
+  "schema_version": "1",
+  "label": "Procedure knowledge for laparoscopic cholecystectomy: what each step is for and what usually comes next. General surgical teaching, not specific to any video or patient. Not clinical advice.",
+  "sources": [
+    "Strasberg SM, Hertl M, Soper NJ. An analysis of the problem of biliary injury during laparoscopic cholecystectomy. J Am Coll Surg 1995;180(1):101-25 (Critical View of Safety).",
+    "SAGES Safe Cholecystectomy Program, six strategies for a safe cholecystectomy.",
+    "Twinanda AP et al. EndoNet, arXiv:1602.03012 (the seven Cholec80 phases used here)."
+  ],
+  "steps": {
+    "Preparation": {
+      "goal": "Ports in, gallbladder fundus grasped and retracted to expose the hepatocystic triangle.",
+      "next": "CalotTriangleDissection",
+      "watch": "Exposure of the triangle."
+    },
+    "CalotTriangleDissection": {
+      "goal": "Clear fat and fibrous tissue from the hepatocystic (Calot) triangle and separate the lower gallbladder from the cystic plate, until exactly two structures (cystic duct and cystic artery) enter the gallbladder.",
+      "next": "ClippingCutting",
+      "watch": "Critical View of Safety: all three criteria should be seen before any clip or cut."
+    },
+    "ClippingCutting": {
+      "goal": "Clip and divide the cystic artery and cystic duct.",
+      "next": "GallbladderDissection",
+      "watch": "Clips go only on the two structures shown in the Critical View of Safety."
+    },
+    "GallbladderDissection": {
+      "goal": "Detach the gallbladder from the liver bed along the cystic plate.",
+      "next": "GallbladderPackaging",
+      "watch": "Staying on the gallbladder wall; bleeding from the liver bed."
+    },
+    "GallbladderPackaging": {
+      "goal": "Place the gallbladder in a specimen bag.",
+      "next": "CleaningCoagulation",
+      "watch": "Spillage of bile or stones."
+    },
+    "CleaningCoagulation": {
+      "goal": "Irrigate, suction and coagulate the liver bed; check clips and haemostasis.",
+      "next": "GallbladderRetraction",
+      "watch": "Bleeding or bile leak from the liver bed or the clipped stumps."
+    },
+    "GallbladderRetraction": {
+      "goal": "Remove the specimen bag through a port.",
+      "next": null,
+      "watch": "Port-site closure."
+    }
+  },
+  "cvs_criteria": {
+    "c1_two_structures": "Two and only two structures are seen entering the gallbladder",
+    "c2_hepatocystic_triangle": "The hepatocystic triangle is cleared of fat and fibrous tissue",
+    "c3_cystic_plate": "The lower third of the gallbladder is separated from the liver (cystic plate visible)"
+  },
+  "deviations": {
+    "clip_before_cvs": {
+      "event": "Clipper or scissors in view before the Critical View of Safety was seen on video",
+      "why_it_matters": "Clipping or cutting before CVS is the deviation most associated with bile duct injury (Strasberg 1995; SAGES Safe Cholecystectomy).",
+      "note": "Video-model observation, not a diagnosis. The surgeon may have confirmed CVS outside the camera view or the model may have missed it."
+    }
+  }
+}

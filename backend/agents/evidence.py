@@ -20,12 +20,13 @@ import statistics
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from ..phase import OOP_PHASES
 from ..scenario import Scenario
+from ..scene import SceneEvent, SceneView
 from ..state import Event, PhaseState
 
 CHART_SECTIONS = ("demographics", "encounter", "history", "medications", "allergies", "labs", "notes")
 TOOLS_WINDOW_S = 10
+MAX_VIDEO_EVENTS = 12
 RECOVERY_BAND_MMHG = 10.0
 # Presentation metadata (real / synthetic / simulated / pending). Shown in the UI, never sent to the
 # agents: a provenance tag is not a clinical finding.
@@ -76,7 +77,10 @@ class EvidenceContext:
 
     def __init__(self, scenario: Scenario, event: Event, now_s: float, patient: dict[str, Any],
                  phase_json: dict[str, Any], phase_state: Optional[PhaseState] = None,
-                 omni: Optional[dict[str, str]] = None, record_mode: str = "full") -> None:
+                 omni: Optional[dict[str, str]] = None, record_mode: str = "full",
+                 scene: Optional[SceneView] = None, video_events: Optional[list[SceneEvent]] = None) -> None:
+        self.scene = scene
+        self.video_events = list(video_events or [])
         self.sc = scenario
         self.event = event
         self.t_alert = int(round(event.event_timestamp))
@@ -111,8 +115,9 @@ class EvidenceContext:
         return note
 
     @property
-    def visible_events(self) -> list[dict[str, Any]]:
-        return [e for e in self.sc.raw.get("surgical_events", []) if e["t_s"] <= self.now_s]
+    def visible_events(self) -> list[SceneEvent]:
+        """Video events from the live models up to now, newest MAX_VIDEO_EVENTS (never from the scenario file)."""
+        return [e for e in self.video_events if e.t_s <= self.now_s][-MAX_VIDEO_EVENTS:]
 
     def baseline_start(self) -> int:
         return max(self.t_alert - 60, 0)
@@ -124,54 +129,49 @@ class EvidenceContext:
         block: dict[str, Any] = {}
         sees: list[dict[str, Any]] = []
         ps = self.phase_state
+        scene = self.scene
+        live = scene is not None and scene.status == "live"
+        block["detector"] = {"status": scene.status if scene else "not running",
+                             "note": "live video models" if live else (scene.note if scene else "no vision service")}
+        if not live:
+            sees.append({"source_id": None, "text": f"Video models not live: {block['detector']['note']}"})
         phase_name: Optional[str] = None
         if ps.name:
             phase_name = ps.name
-            stale = "stale" in (ps.status or "").lower() or "unavailable" in (ps.status or "").lower()
+            stale = (not live) or "stale" in (ps.status or "").lower() or "unavailable" in (ps.status or "").lower()
             block["phase"] = {"source_id": "phase", "display": ps.display or self.phase_display.get(ps.name, ps.name),
                               "since_rel_alert_s": self.rel(ps.since_s), "stale": stale,
                               "set_by": "presenter" if ps.set_by == "presenter" else "detector heuristic"}
-        elif self.sc.raw.get("procedure_phase_at_event") in self.phase_display:
-            phase_name = self.sc.raw["procedure_phase_at_event"]
-            block["phase"] = {"source_id": "phase", "display": self.phase_display[phase_name],
-                              "since_rel_alert_s": None, "stale": False,
-                              "set_by": "scenario file (no live detector yet)"}
-        if "phase" in block:
             p = block["phase"]
             sees.append({"source_id": "phase", "text": f"Phase: {p['display']} (set by {p['set_by']})"})
 
-        events = self.visible_events
-        latest = max(events, key=lambda e: e["t_s"]) if events else None
-        tools: dict[str, int] = dict(ps.tools_window) if ps.tools_window else {}
-        tools_rel = 0
-        basis = "detector window"
-        if not tools and latest is not None:
-            tools = {t: TOOLS_WINDOW_S for t in latest.get("tools", [])}
-            tools_rel = self.rel(latest["t_s"]) or 0
-            basis = "scenario surgical_events (no live detector yet)"
+        tools: dict[str, int] = dict(ps.tools_window) if ps.tools_window and live else {}
         if tools:
             block["tools_window"] = {"source_id": "tools", "window_s": TOOLS_WINDOW_S,
-                                     "seconds_present": tools, "basis": basis}
+                                     "seconds_present": tools, "basis": "live instrument detector"}
             sees.append({"source_id": "tools", "text": "Tools in the last 10 s: "
-                         + ", ".join(f"{k} {v} s" for k, v in tools.items()) + f" ({basis})"})
+                         + ", ".join(f"{k} {v} s" for k, v in tools.items()) + " (live instrument detector)"})
+
+        if scene is not None and scene.cvs_available and live:
+            block["anatomy_cvs"] = {
+                "source_id": "cvs", "structures_in_view": [a for a in scene.anatomy if a not in ("tool", "gallbladder")],
+                "criteria_seen": [c.name for c in scene.cvs if c.met],
+                "cvs_seen_rel_alert_s": self.rel(scene.cvs_seen_at_s)}
+            seen = block["anatomy_cvs"]["criteria_seen"]
+            sees.append({"source_id": "cvs", "text": f"Critical View of Safety criteria seen now: {len(seen)} of 3"
+                         + ("" if scene.cvs_seen_at_s is None else ", all three seen earlier")})
 
         block["surgical_events"] = []
-        for e in events:
-            rel = self.rel(e["t_s"])
-            block["surgical_events"].append({"source_id": e["source_id"], "rel_alert_s": rel,
-                                             "event": e["event"], "tools": e.get("tools", [])})
-            sees.append({"source_id": e["source_id"], "text": f"{self._rel_text(rel)}: {e['event']}"})
-
         block["observations"] = []
-        for oop in self.phase_json.get("out_of_phase_events", []):
-            rule = OOP_PHASES.get(oop["id"])
-            if rule is None or phase_name is None:
-                continue
-            tool, threshold, phases = rule
-            if phase_name in phases and tools.get(tool, 0) / TOOLS_WINDOW_S >= threshold:
-                block["observations"].append({"source_id": oop["id"], "rel_alert_s": tools_rel,
-                                              "event": oop["event"], "note": oop["note"]})
-                sees.append({"source_id": oop["id"], "text": f"{oop['event']} (code observation, not a diagnosis)"})
+        for e in self.visible_events:
+            rel = self.rel(e.t_s)
+            target = "observations" if e.kind in ("observation", "deviation") else "surgical_events"
+            row: dict[str, Any] = {"source_id": e.source_id, "rel_alert_s": rel, "event": e.text, "tools": e.tools}
+            if target == "observations":
+                row["note"] = e.data.get("note", "")
+            block[target].append(row)
+            suffix = " (video-model observation, not a diagnosis)" if target == "observations" else ""
+            sees.append({"source_id": e.source_id, "text": f"{self._rel_text(rel)}: {e.text}{suffix}"})
 
         if self.omni:
             block["omni"] = {"source_id": self.omni["source_id"], "answer": self.omni["answer"]}
@@ -180,7 +180,8 @@ class EvidenceContext:
         else:
             block["omni"] = None
 
-        allowed = [i for i, key in (("phase", "phase"), ("tools", "tools_window")) if key in block]
+        allowed = [i for i, key in (("phase", "phase"), ("tools", "tools_window"), ("cvs", "anatomy_cvs"))
+                   if key in block]
         allowed += [e["source_id"] for e in block["surgical_events"]]
         allowed += [o["source_id"] for o in block["observations"]]
         if self.omni:
@@ -276,14 +277,15 @@ class EvidenceContext:
             tw = self.surgical().block.get("tools_window", {}).get("seconds_present", {})
             names = [k.lower() for k, v in tw.items() if v >= 3]
             return (_join_and(names) + " in view") if names else "tools in view"
-        if sid.startswith("surg-"):
-            e = next((x for x in self.sc.raw.get("surgical_events", []) if x["source_id"] == sid), None)
+        if sid == "cvs":
+            seen = self.surgical().block.get("anatomy_cvs", {}).get("criteria_seen", [])
+            return f"{len(seen)} of 3 safety-view criteria seen on video"
+        if sid.startswith("vid-"):
+            e = next((x for x in self.video_events if x.source_id == sid), None)
             if e is None:
                 return sid
-            text = re.sub(r"\s*\([^)]*\)", "", e["event"].split(";")[0]).strip()
-            rel = self.rel(e["t_s"])
-            when = f"from {abs(rel)} s before the alert" if rel < 0 else self._rel_text(rel)
-            return f"{_lower_first(text)}, {when}"
+            text = re.sub(r"\s*\([^)]*\)", "", e.text).strip()
+            return f"{_lower_first(text)}, {self._rel_text(self.rel(e.t_s))}"
         if sid.startswith("oop-"):
             o = next((x for x in self.phase_json.get("out_of_phase_events", []) if x["id"] == sid), None)
             return _lower_first(o["event"]) if o else sid

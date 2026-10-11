@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
@@ -26,7 +26,9 @@ from . import omni as omni_module
 from .audit import AuditLog
 from .metrics import BytesOutCounter, read_mem_used_gb
 from .phase import PhaseRules
+from . import vision as vision_module
 from .scenario import load_all
+from .scene import LiveScene
 from .state import AuditInfo, Labels, PhaseState, StateStore, VideoInfo
 from .telemetry import ScenarioPlayer
 from .video_worker import VideoWorker
@@ -59,6 +61,7 @@ class Services:
     report_prompt: str
     reports: dict[int, report_module.Report]
     report_lock: asyncio.Lock
+    vision: Optional[vision_module.VisionClient] = None
 
 
 async def metrics_loop(svc: Services, period_s: float = 1.0) -> None:
@@ -67,7 +70,10 @@ async def metrics_loop(svc: Services, period_s: float = 1.0) -> None:
             "render_fps": svc.video.render_fps(), "bytes_out": svc.bytes_out.read(), "gb_used": read_mem_used_gb(),
             "notes": {**svc.store.state.metrics.notes, "bytes_out": svc.bytes_out.note()},
         })
+        sc = svc.store.state.scene
+        m = m.model_copy(update={"detector_ms": sc.detector_ms, "detector_fps": sc.detector_fps})
         stats = svc.video.stats()
+        stats["detector"] = f"{sc.status}: {sc.note}"
         svc.store.update(metrics=m, video=VideoInfo(**stats), labels=Labels.for_video(stats["source"]))
         await asyncio.sleep(period_s)
 
@@ -91,12 +97,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     store = StateStore()
     scenarios = load_all(DATA_DIR)
     video = VideoWorker(REPO_DIR)
-    player = ScenarioPlayer(store, scenarios, video=video, initial=DEFAULT_SCENARIO)
     phase_path = DATA_DIR / "procedure" / "phase_rules.json"
+    phase_json = json.loads(phase_path.read_text())
+    steps = json.loads((DATA_DIR / "procedure" / "lap_chole_steps.json").read_text())
+    audit_ref: dict[str, AuditLog] = {}
+
+    def scene_log(kind: str, summary: str, data: dict | None, actor: str) -> None:
+        if "audit" in audit_ref:
+            audit_ref["audit"].record(kind, summary, data, actor=actor)
+
+    scene = LiveScene(PhaseRules.load(phase_path), steps, phase_json.get("out_of_phase_events", []), log=scene_log)
+    player = ScenarioPlayer(store, scenarios, video=video, initial=DEFAULT_SCENARIO, scene=scene)
+    vision_client = None
+    if vision_module.enabled():
+        vision_client = vision_module.VisionClient(scene, clock=lambda: player.clock,
+                                                   on_status=lambda s, d: scene_log("vision_status", s, d, "vision"))
+        video.on_frame = vision_client.submit
     patient = json.loads((DATA_DIR / "patient" / "patient_record.json").read_text())
     client = LightningClient()  # LIGHTNING_URL, LIGHTNING_MODEL, AGENT_TIMEOUT_S
     omni = omni_module.OmniClient(REPO_DIR) if omni_module.enabled() else None  # OMNI_URL, OMNI_TIMEOUT_S; skipped with no video
-    orchestrator = Orchestrator(store, player, patient, json.loads(phase_path.read_text()), client=client, omni=omni)
+    orchestrator = Orchestrator(store, player, patient, phase_json, client=client, omni=omni, scene=scene)
     player.listener = orchestrator
     audit = AuditLog(AUDIT_DIR, context=lambda: (player.clock, player.scenario.id),
                      on_change=lambda a: store.update(audit=AuditInfo(**a.info())))
@@ -104,6 +124,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                  {"version": app.version, "scenarios": list(scenarios), "lightning_url": client.base_url,
                   "audit_file": str(audit.path)}, clock_s=0.0, scenario_id=player.scenario.id)
     orchestrator.audit = audit
+    audit_ref["audit"] = audit
     player.attach_audit(audit)
     svc = Services(store=store, player=player, video=video, bytes_out=BytesOutCounter(),
                    phase_rules=PhaseRules.load(phase_path), orchestrator=orchestrator,
@@ -111,7 +132,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                    report_client=LightningClient(timeout_s=REPORT_TIMEOUT_S),
                    report_prompt=(Path(os.environ.get("SENTINEL_PROMPTS", REPO_DIR / "prompts")) / "report.md").read_text(encoding="utf-8"),
                    reports={}, report_lock=asyncio.Lock())
+    svc.vision = vision_client
     app.state.svc = svc
+    if vision_client is not None:
+        vision_client.start()
     video.start()
     tasks = [asyncio.create_task(store.run_broadcaster(), name="broadcaster"),
              asyncio.create_task(player.run(), name="telemetry"),
@@ -131,6 +155,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await svc.report_client.aclose()
         audit.close()
         video.stop()
+        if vision_client is not None:
+            vision_client.stop()
 
 
 app = FastAPI(title="Sentinel-OR", version="0.4.0-m4a", lifespan=lifespan)
@@ -153,6 +179,10 @@ async def health(request: Request) -> dict[str, Any]:
                           "timeout_s": svc.orchestrator.client.timeout_s},
             "audit": {"entries": svc.audit.count, "status": svc.audit.status, "file": str(svc.audit.path)},
             "omni": None if svc.orchestrator.omni is None else {"url": svc.orchestrator.omni.base_url},
+            "vision": None if svc.vision is None else {"url": vision_module.VISION_URL, "up": svc.vision.up,
+                                                       "error": svc.vision.error, "scene": st.scene.status,
+                                                       "models": {k: v.get("loaded") for k, v in
+                                                                  svc.vision.health.get("models", {}).items()}},
             "uptime_s": round(time.monotonic() - svc.started, 1)}
 
 
@@ -301,14 +331,11 @@ async def control_surgeon_asks(request: Request) -> dict[str, Any]:
 async def control_phase(name: str, request: Request) -> dict[str, Any]:
     """Presenter override of the step label ('auto' clears it)."""
     svc = services(request)
-    if name == "auto":
-        svc.store.update(phase=PhaseState())
+    if name == "auto":  # the tracker already carries on from a forced step; nothing to clear
         return _ack(svc)
-    display = svc.phase_rules.display.get(name)
-    if display is None:
+    if name not in svc.phase_rules.display:
         raise HTTPException(404, f"unknown phase {name}")
-    svc.store.update(phase=PhaseState(name=name, display=display, since_s=svc.store.state.clock_s,
-                                      status="set by presenter", set_by="presenter"))
+    svc.player.force_phase(name)
     return _ack(svc)
 
 
@@ -328,8 +355,23 @@ async def ws_state(ws: WebSocket) -> None:
 
 
 @app.get("/video.mjpg")
-async def video_mjpg(request: Request) -> StreamingResponse:
-    video = services(request).video
+async def video_mjpg(request: Request, boxes: int = 0) -> StreamingResponse:
+    """Plain frames, or with ?boxes=1 the newest frame the models have seen with its own boxes
+    drawn on it (falls back to plain frames while the vision service is down)."""
+    svc = services(request)
+    plain = svc.video
+    boxed = svc.vision if boxes and svc.vision is not None else None
+
+    class _Source:
+        @staticmethod
+        def latest() -> Any:
+            if boxed is not None:
+                a = boxed.annotated()
+                if a is not None:
+                    return a
+            return plain.latest()
+
+    video = _Source
 
     async def frames() -> AsyncIterator[bytes]:
         # Each part is closed by the next boundary right away. Some browsers still paint a

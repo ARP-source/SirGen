@@ -1,4 +1,4 @@
-"""Video decode -> (M2 detection hook) -> JPEG -> latest frame for /video.mjpg.
+"""Video decode -> vision client mailbox -> JPEG -> latest frame for /video.mjpg.
 
 Two threads joined by a bounded queue. The decoder paces itself to the source
 FPS and drops the oldest frame when the renderer is behind (hard rule 3), so
@@ -13,6 +13,7 @@ import queue
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Optional
 
@@ -30,14 +31,7 @@ BLACK_MEAN = 4.0
 Frame = tuple[int, np.ndarray]
 
 
-# ==== M2 DETECTION HOOK =======================================================
-# M1: no-op. M2 puts TensorRT YOLO here, in its own worker with its own bounded
-# queue. The hook must never block the render path; it returns detections for
-# THIS frame id only (hard rule 4: draw boxes only on the frame they came from)
-# or None when no result exists for this frame. M1 draws no boxes.
-def detection_hook(frame_id: int, frame: np.ndarray) -> Optional[list[dict[str, Any]]]:
-    return None
-# ==============================================================================
+FrameSink = Callable[[int, np.ndarray], None]
 
 
 def resolve_video(scenario: Optional[Scenario], repo_dir: Path) -> tuple[Optional[Path], str]:
@@ -45,7 +39,7 @@ def resolve_video(scenario: Optional[Scenario], repo_dir: Path) -> tuple[Optiona
     env = os.environ.get("SENTINEL_VIDEO")
     if env:
         p = Path(env).expanduser()
-        return (p, f"SENTINEL_VIDEO={p}") if p.is_file() else (None, f"SENTINEL_VIDEO not found: {p}")
+        return (p, f"SENTINEL_VIDEO={p}") if p.exists() else (None, f"SENTINEL_VIDEO not found: {p}")  # file or /dev/videoN
     rel = (scenario.video.get("file") if scenario else None) or None
     if rel:
         assets = Path(os.environ.get("SENTINEL_ASSETS", repo_dir.parent / "assets"))
@@ -95,6 +89,7 @@ class VideoWorker:
         self.decode_error = ""  # why the file shows nothing, when it opens but yields no frames
         self.mean_brightness: Optional[float] = None  # of the last rendered frame, 0 (black) to 255
         self._black_run = 0
+        self.on_frame: Optional[FrameSink] = None  # the vision client's mailbox; never blocks
 
     # ---- control (called from the event loop) --------------------------------
     def start(self) -> None:
@@ -231,7 +226,8 @@ class VideoWorker:
                 frame_id, frame = self._queue.get(timeout=0.2)
             except queue.Empty:
                 continue
-            detection_hook(frame_id, frame)  # M2: returns boxes for this frame; M1 draws nothing
+            if self.on_frame is not None and self.source is not None:
+                self.on_frame(frame_id, frame)  # must return at once (VisionClient.submit)
             if self.source is not None:  # only real footage is checked for black frames
                 self.mean_brightness = round(float(frame[::16, ::16].mean()), 1)
                 self._black_run = self._black_run + 1 if self.mean_brightness < BLACK_MEAN else 0

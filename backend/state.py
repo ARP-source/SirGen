@@ -17,6 +17,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 from .gate import GateView, SpeechView
+from .scene import SceneView
 
 log = logging.getLogger("sentinel.state")
 
@@ -105,7 +106,7 @@ class Event(BaseModel):
 
 class TimelineItem(BaseModel):
     t_s: float
-    kind: Literal["event", "alert", "context", "baseline", "info"]
+    kind: Literal["event", "alert", "context", "baseline", "info", "video"]
     label: str
     event_id: Optional[str] = None
 
@@ -251,6 +252,7 @@ class SentinelState(BaseModel):
     audit: AuditInfo = Field(default_factory=AuditInfo)
     gate: GateView = Field(default_factory=GateView)
     speech: SpeechView = Field(default_factory=SpeechView)
+    scene: SceneView = Field(default_factory=SceneView)
 
 
 class StateStore:
