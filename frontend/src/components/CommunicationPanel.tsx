@@ -1,8 +1,10 @@
 import SourceChip from './SourceChip'
 import { CAT_LABEL, STANCE_WORD, arr, conversationByRun, kindLabel, str, tLabel, type AuditRow } from '../agentsAudit'
+import type { SentinelState } from '../types'
+import { LiveActivityPanel } from './LiveActivityStrip'
 
-/** Right-side panel: the conversation between agents for this run, read from the audit log. */
-export default function CommunicationPanel({ rows, onClose }: { rows: AuditRow[]; onClose: () => void }) {
+/** Right-side panel: live thinking (WebSocket) plus the logged conversation. */
+export default function CommunicationPanel({ rows, state, onClose }: { rows: AuditRow[]; state: SentinelState; onClose: () => void }) {
   const groups = conversationByRun(rows)
   return (
     <aside className="ag-comm" role="dialog" aria-label="Agent communication">
@@ -10,12 +12,14 @@ export default function CommunicationPanel({ rows, onClose }: { rows: AuditRow[]
         <div>
           <b>Communication</b>
           <p className="ag-comm-legend">
-            Everything here is a validated model message or a code decision, read from the tamper-evident audit log. Nothing is scripted.
+            <b>Live now</b> shows agents on a model call (from the live link). <b>Logged</b> rows are validated messages and code decisions from the tamper-evident audit log. Nothing is scripted.
           </p>
         </div>
         <button type="button" className="small-btn" onClick={onClose}>Close</button>
       </header>
       <div className="ag-comm-body">
+        <LiveActivityPanel s={state} />
+        <h3 className="ag-comm-run-title ag-comm-log-title">Logged</h3>
         {groups.length === 0 && <div className="muted small">No deliberation or speech events logged yet for this session.</div>}
         {groups.map((g) => (
           <section key={g.run} className="ag-comm-run">

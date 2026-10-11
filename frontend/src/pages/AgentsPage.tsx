@@ -6,6 +6,7 @@ import { CAT_LABEL, useAuditEntries } from '../agentsAudit'
 import AgentCard, { deriveStatus, sampleFor, slotFor, visionLive } from '../components/AgentCard'
 import ActionsTimeline from '../components/ActionsTimeline'
 import CommunicationPanel from '../components/CommunicationPanel'
+import LiveActivityStrip from '../components/LiveActivityStrip'
 import PlaneLayer, { usePlaneLayer } from '../components/PlaneLayer'
 import { CATEGORY_LABEL } from '../components/Agents'
 import AppNav from '../components/AppNav'
@@ -327,7 +328,7 @@ export default function AgentsPage() {
     <div className={`agents-page${commOpen ? ' ag-comm-open' : ''}`}>
       <AppNav />
       <PlaneLayer layerRef={layerRef} />
-      {commOpen && <CommunicationPanel rows={auditRows} onClose={() => setCommOpen(false)} />}
+      {commOpen && <CommunicationPanel rows={auditRows} state={s} onClose={() => setCommOpen(false)} />}
       <header className="ag-header">
         <div className="ag-brand"><b>SWARM</b> <span>AGENTS</span></div>
         <div className="ag-right">
@@ -356,6 +357,8 @@ export default function AgentsPage() {
           />
         ))}
       </div>
+
+      <LiveActivityStrip s={s} />
 
       <div className="ag-delib">
         <span className="delib-k">Deliberation</span>
