@@ -41,7 +41,8 @@ Log in with the link it prints, then paste prompts the same way as in Claude Cod
 | Lightning LLM on :8000 | UP. Smoke 190-350 ms; structured output works; 51 of 121 GB in use | Real scenario runs |
 | **Speak-or-hold** (judge advice) | **In this repo** (`backend/gate.py`). Patch never arrived on the GX10, so it was built here. Holds non-urgent speech while Clipper/Scissors/Bipolar/Hook is in use, releases 1.5 s after withdrawal or when the surgeon asks (`/control` Surgeon asks), urgent (MAP < 55 or SpO2 < 90, demo thresholds) never held, banner never held. Instruments from `instrument_timeline` until M2 calls `gate.set_live_tools()`. Audit: speech_held / speech_released / speech_spoken / speech_urgent. `?voice=1` on /surgical uses the browser voice | pytest `test_gate.py`. drug_effect Hook until t 46; artifact Hook until t 92; true_bleed irrigator at the event (speaks at once), bipolar from t 95 (MAP < 55 at t 140 breaks through) |
 | **Simple animated screen 2** (judge advice) | **In this repo**. Default `/dashboard` = 3 agent cards, confidence bars, evidence kinds, CSS round-2 links, outcome card, one-line team question; Details = old dashboard | frontend build |
-| M2 detector (YOLO, boxes, step label from video) | Not started. Weights in `~/sentinel_or_detector.zip` | n/a |
+| **Live video understanding** (M2, done 2026-10-10 evening) | **Running.** `vision/server.py` on :8004 (training venv) runs 3 models on every newest frame: instrument detector (Cholec80-Boxes, 7 classes), anatomy detector (Endoscapes2023, 6 classes: cystic plate, Calot triangle, cystic artery, cystic duct, gallbladder, tool) and a Critical View of Safety classifier (Endoscapes2023 CVS, 3 criteria). `backend/vision.py` sends frames, draws boxes on their own frame (`/video.mjpg?boxes=1`). `backend/scene.py` turns results into instruments now (gate), phase tracker per 1 s, step goal + next step (`data/procedure/lap_chole_steps.json`), CVS status, `vid-N` video events (audit `video_event`) and the clip-before-CVS deviation (audit `deviation`, spoken at once, shown on /surgical). Surgical agent evidence comes only from these; scenario `surgical_events`/`instrument_timeline` are no longer read | 176 pytest incl. `test_scene.py`. Live on the HoloHub clip: 42-65 ms/frame, 15-22 fps with training running. CVS test (Endoscapes official test split, 40 held-out videos): mAP 0.561 (c1 0.559, c2 0.476, c3 0.647). Anatomy: interim val mAP50 0.58 at epoch 39; final test metrics land in `~/sentinel-train/models/anatomy_metrics.json` when the run ends (watcher in tmux `dl:install`) |
+| Phase (step) label | Still the tool heuristic in `phase_rules.json` (no phase labels available: Cholec80 full needs an access request). On the 27 s HoloHub montage it stays on Preparation (needs 15 s dwell); a continuous video is needed to judge it | n/a |
 | M5 voice | Not started (`backend/voice.py` stub). Must route answers through the speak-or-hold gate and log `voice_qa` | n/a |
 | Omni video model on :8001 | Not running; contributes nothing | n/a |
 | Pitch numbers | Measured 2026-10-11 01:30Z, medians of 9 real runs: alert 0.16 ms; deliberation 8.5 s; 121 tokens/s across three agents, 44 per call; 58 GB in use; render 25 FPS. Detector not measured. **Bytes out was ~35 MB, not 0**: it counts all interfaces incl. remote sessions and browsers on other machines. For the claim, run with the uplink unplugged and `SENTINEL_BYTES_OUT_IFACES` set to the uplink (being added) | `scripts/pitch_numbers.py` |
@@ -51,7 +52,7 @@ Log in with the link it prints, then paste prompts the same way as in Claude Cod
 ## 3. Next, in order
 1. Done: git init on `~/sentinel-or-app-m3` (`75f5ff8` handoff baseline). `/health` = M4a. Lightning up. 158 tests passed on that baseline.
 2. Done: speak-or-hold + simple screen 2 (patch was not on the box). Next after this lands: restart only the app (`dev.sh`), not Lightning.
-3. M2 detector (feeds live tools to speak-or-hold and the step label).
+3. Done: live video understanding (see Status). Start the vision service before the app: `bash scripts/start_vision.sh` (tmux `dl:vision`). Run long videos with `SENTINEL_RUN_S=1800`.
 4. M5 voice (answers go through speak-or-hold; every Q&A logged).
 5. Pitch numbers from real runs, then the backup demo video (before hardware return Sunday 3:45 pm; Devpost closes 1:30 pm).
 Open from M4a: log rejected agent text / one-sentence splitter (artifact run 2); bytes-out interface filter.
@@ -67,6 +68,7 @@ Copy-paste prompts for each: `MILESTONES.md`.
 cd ~/sentinel-or-app-m3
 SENTINEL_VIDEO=$HOME/assets/data/holoscan_sample/surgical_video.264 bash scripts/dev.sh 2>&1 | tee -a ~/sentinel-dev.log
 ```
+Vision service first (own window): `cd ~/sentinel-train && source .venv/bin/activate && python ~/sentinel-or-app-m3/vision/server.py` (or `bash scripts/start_vision.sh`). For a full-length video add `SENTINEL_RUN_S=1800` before `SENTINEL_VIDEO=...`.
 Screens (from the laptop browser): `http://169.233.72.133:5173/surgical`, `/dashboard`, `/control`, `/post-op`. Press **Play** on `/control` or the video stays still.
 
 **Lightning** (already started once; only re-run if `docker ps` does not list `lightning`):
