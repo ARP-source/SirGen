@@ -188,3 +188,21 @@ def test_fake_llm_report_double_produces_valid_narratives(scenarios, tmp_path):
         assert "converged" in rep.html_text
         del hx
     asyncio.run(go())
+
+
+def test_aftercare_is_a_cited_clinician_draft_and_coding_is_off_by_default(scenarios, tmp_path, monkeypatch):
+    async def go():
+        st, audit = await ran(scenarios, tmp_path)
+        monkeypatch.delenv("SENTINEL_REPORT_CODING", raising=False)
+        rep = await R.generate(audit, narrative_client(good_handler), PATIENT, PROMPT, out_dir=tmp_path)
+        h = rep.html_text
+        assert "Aftercare and medication: Draft for clinician review" in h and "Medication reconciliation" in h
+        assert "meds-01" in h and "apixaban" in h  # every medicine line names its chart record
+        for gone in ("Insurance coding", "K80.00", "47562", "I48.0", "SAGES", "American College of Surgeons", "ERAS",
+                     "When to call", "Small port-site incisions", "Strasberg", "bile duct injury"):
+            assert gone not in h, gone
+        assert rep.coding is None
+        monkeypatch.setenv("SENTINEL_REPORT_CODING", "1")
+        flagged = await R.generate(audit, narrative_client(good_handler), PATIENT, PROMPT, out_dir=tmp_path)
+        assert "Insurance coding" in flagged.html_text and flagged.coding is not None
+    asyncio.run(go())

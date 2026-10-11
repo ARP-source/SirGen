@@ -79,7 +79,7 @@ def build_aftercare(patient: dict[str, Any], ref: dict[str, Any], entries: list[
         d = e.get("data", {})
         if e["kind"] == "deviation":
             review.append({"log_id": e["id"], "clock_s": e.get("clock_s"), "what": e["summary"],
-                           "why": d.get("why_it_matters", ""), "note": d.get("note", "")})
+                           "why": "", "note": d.get("note", "")})
         elif e["kind"] == "video_event" and d.get("kind") == "observation":
             review.append({"log_id": e["id"], "clock_s": e.get("clock_s"), "what": e["summary"], "why": "",
                            "note": d.get("note", "")})

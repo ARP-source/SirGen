@@ -325,12 +325,12 @@ class ScenarioPlayer:
         )
 
     def _announce_deviations(self) -> None:
-        """A clip or cut seen before the Critical View of Safety is spoken at once: it is only
-        useful before the clip closes, so it is never held by the gate."""
+        """A classifier remark (clip or cut seen before the Critical View of Safety) goes on the
+        timeline and into the audit log as a video-model observation. It is never spoken and never
+        urgent: the CVS call is too imprecise on held-out video to interrupt a surgeon with."""
         devs = self.scene.deviations if self.scene is not None else []
         for d in devs[self._deviations_seen:]:
-            self._add_timeline("video", f"deviation: {d.text}", t_s=d.t_s)
-            self.offer_speech(f"Check: {d.text}.", kind="safety_check", urgent=True)
+            self._add_timeline("video", f"video-model observation: {d.text}", t_s=d.t_s)
         self._deviations_seen = len(devs)
 
     def force_phase(self, name: str) -> None:

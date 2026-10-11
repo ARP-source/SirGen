@@ -128,7 +128,7 @@ def build_surgery_log(entries: list[dict[str, Any]], steps_ref: Optional[dict[st
         if k == "deviation":
             flag = "deviation"
             deviations.append({"log_id": e["id"], "clock_s": t, "what": e["summary"],
-                               "why": d.get("why_it_matters", ""), "step": st.display if st else ""})
+                               "why": "", "step": st.display if st else ""})
             if st:
                 st.deviations += 1
         elif k == "alert":

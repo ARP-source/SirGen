@@ -109,15 +109,35 @@ def test_set_live_tools_none_means_unknown_not_scripted():
     assert tools == [] and basis == DETECTOR_UNAVAILABLE
 
 
-def test_safety_check_is_never_held():
+def test_video_model_observations_are_never_spoken():
+    import pytest
     g = SpeechGate()
-    g.on_clock(0.0, ["Clipper"], "live detector")
-    g.offer("Check: Clipper in view before the Critical View of Safety was seen on video.", kind="safety_check", urgent=True)
-    cur = g.speech_view().current
-    assert cur is not None and cur.kind == "safety_check" and "safety check" in (cur.release_reason or "")
+    g.on_clock(0.0, [], "live detector")
+    with pytest.raises(ValueError):
+        g.offer("Check: Clipper in view before the Critical View of Safety was seen on video.", kind="safety_check", urgent=True)
+    assert g.speech_view().current is None
 
 
 def test_load_all_still_works():
     from pathlib import Path
     sc = load_all(Path(__file__).resolve().parents[2] / "data")
     assert set(sc) == {"artifact", "drug_effect", "true_bleed"}
+
+
+def test_a_deviation_reaches_the_timeline_but_is_never_offered_as_speech(scenarios):
+    from backend.scene import SceneEvent
+    from backend.state import StateStore
+    from backend.telemetry import ScenarioPlayer
+
+    class Scene:  # TEST ONLY: the one attribute `_announce_deviations` reads
+        deviations = [SceneEvent(source_id="vid-11", t_s=15.0, kind="deviation", tools=["Clipper"],
+                                 text="Clipper in view before the Critical View of Safety was seen on video (0 of 3 criteria seen)")]
+
+    store = StateStore()
+    player = ScenarioPlayer(store, scenarios, initial="true_bleed")
+    player.scene = Scene()  # type: ignore[assignment]
+    player._announce_deviations()
+    labels = [t.label for t in player._timeline]
+    assert any(l.startswith("video-model observation: Clipper in view") for l in labels)
+    sv = player.gate.speech_view()
+    assert sv.current is None and not sv.queued

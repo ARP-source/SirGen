@@ -19,6 +19,7 @@ import hashlib
 import html
 import json
 import logging
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -191,6 +192,12 @@ def narrative_schema(allowed: list[str]) -> dict[str, Any]:
                                      "cites": {"type": "array", "minItems": 1, "maxItems": 4,
                                                "items": {"type": "string", "enum": allowed}}}}}},
     }
+
+
+def coding_enabled() -> bool:
+    """The insurance-coding section (CPT / ICD-10 lookup) is off unless SENTINEL_REPORT_CODING=1:
+    the code table is unverified and a report that prints diagnosis codes reads as a diagnosis."""
+    return os.environ.get("SENTINEL_REPORT_CODING", "").strip() == "1"
 
 
 class InvalidNarrative(ValueError):
@@ -497,11 +504,12 @@ def render_html(r: Report) -> str:
 
     if r.aftercare is not None:
         ac = r.aftercare
-        a("<h2>Aftercare (draft for the discharging team)</h2>")
-        a("<p class='small'>General teaching for laparoscopic cholecystectomy and the decisions the chart leaves open. "
-          "Not patient-specific orders: Sentinel does not decide doses, restarts or stops.</p>")
+        a("<h2>Aftercare and medication: Draft for clinician review</h2>")
+        a("<p class='small'>Every line below is copied from a chart record or a log entry and names it. "
+          "Not patient-specific orders: Sentinel does not decide doses, restarts or stops. "
+          "General aftercare teaching and guideline references are unverified and not shown.</p>")
         a("<h3 style='font-size:14px;margin:12px 0 4px'>Intra-operative items to review</h3>")
-        a(_table(["Log", "Time", "What", "Why it matters / note"],
+        a(_table(["Log", "Time", "What (video-model or agent observation)", "Note"],
                  [[f"<span class='ref'>{_e(x['log_id'])}</span>", _e(t_label(x['clock_s'])), _e(x["what"]),
                    _e(" ".join(p for p in (x["why"], x["note"]) if p))] for x in ac.review],
                  "Nothing from the video models or the agents was flagged for review in this run."))
@@ -512,9 +520,6 @@ def render_html(r: Report) -> str:
         if ac.allergies:
             a("<p>" + "<br>".join(f"<span class='ref'>{_e(x['source_id'])}</span> {_e(x['text'])}. {_e(x['prompt'])}"
                                    for x in ac.allergies) + "</p>")
-        a("<h3 style='font-size:14px;margin:12px 0 4px'>General aftercare teaching</h3>")
-        a("<ul>" + "".join(f"<li><b>{_e(g['topic'])}.</b> {_e(g['text'])}</li>" for g in ac.general) + "</ul>")
-        a("<p class='small'>Sources: " + _e("; ".join(ac.sources)) + "</p>")
     if r.coding is not None:
         cd = r.coding
         a("<h2>Insurance coding (draft for a certified coder)</h2>")
@@ -565,7 +570,7 @@ async def generate(audit: AuditLog, client: LightningClient, patient: dict[str, 
     report.surgery = build_surgery_log(facts.entries, _load(ddir / "procedure" / "lap_chole_steps.json"))
     if ac_ref is not None:
         report.aftercare = build_aftercare(patient, ac_ref, facts.entries)
-    if cmap is not None:
+    if cmap is not None and coding_enabled():
         report.coding = build_coding(patient, cmap)
     report.html_text = render_html(report)
     report.sha256 = hashlib.sha256(report.html_text.encode("utf-8")).hexdigest()

@@ -127,11 +127,12 @@ class SpeechGate:
 
     def offer(self, text: str, kind: Literal["team_question", "shared_view", "urgent_vitals", "safety_check"] = "team_question",
               urgent: bool = False) -> SpeechItem:
+        if kind == "safety_check":  # classifier remarks are screen-2 and log only, never speech
+            raise ValueError("video-model observations are never spoken")
         self._seq += 1
         item = SpeechItem(id=f"sp-{self._seq}", text=text, kind=kind, urgent=urgent, created_t=round(self._clock, 2))
         if urgent or self.status == "open":
-            reason = ("safety check before clip or cut (not held)" if kind == "safety_check"
-                      else "urgent (demo threshold)") if urgent else "clear to speak"
+            reason = "urgent (demo threshold)" if urgent else "clear to speak"
             self._speak(item, reason)
             if urgent:
                 self._record("speech_urgent", f"urgent speech (not held): {text}",

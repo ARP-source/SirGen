@@ -310,7 +310,7 @@ class LiveScene:
             self._emit("deviation", t0, f"{tool} in view before the Critical View of Safety was seen on video "
                        f"({len(met)} of 3 criteria seen)", cutting,
                        {"deviation": "clip_before_cvs", "cvs_scores": scores, "criteria_met": met,
-                        "why_it_matters": dev.get("why_it_matters", ""), "note": dev.get("note", ""),
+                        "note": dev.get("note", ""),  # the unverified literature line is not logged or shown
                         "dissection_observed_s": self._dissection_s})
 
     # ---- helpers ------------------------------------------------------------------
