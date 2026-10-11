@@ -138,14 +138,16 @@ export default function AgentCard({
   cardRef?: (el: HTMLButtonElement | null) => void
 }) {
   const st = deriveStatus(cfg, s)
-  // The model is composing: the card pops out and a sheet of paper is being written on.
-  const thinking = cfg.kind === 'llm' && slotFor(s, cfg.stateKey)?.state === 'thinking'
+  const slot = cfg.kind === 'llm' ? slotFor(s, cfg.stateKey) : undefined
+  const procThinking = cfg.id === 'procedure' && s.procedure.state === 'thinking'
+  const active = slot?.state === 'thinking' || slot?.state === 'waiting' || procThinking
+  const thinking = cfg.kind === 'llm' && active
   return (
     <button
       type="button"
       ref={cardRef}
       data-agent={cfg.id}
-      className={`ag-card tone-${st.tone}${selected ? ' selected' : ''}${thinking ? ' thinking' : ''}`}
+      className={`ag-card tone-${st.tone}${selected ? ' selected' : ''}${thinking ? ' thinking' : ''}${slot?.state === 'waiting' ? ' waiting' : ''}`}
       onClick={onSelect}
       aria-pressed={selected}
       aria-label={`${cfg.title}, ${cfg.subtitle}, ${st.word}`}

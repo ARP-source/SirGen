@@ -36,6 +36,13 @@ export function collectLiveActivity(s: SentinelState): LiveActivity[] {
     })
   }
 
+  if (!out.some((x) => x.id === 'procedure') && s.procedure.state === 'thinking') {
+    const preview = s.procedure.sees?.length
+      ? s.procedure.sees.slice(0, 2).map((x) => x.text).join(' · ')
+      : null
+    out.push({ id: 'procedure', title: 'The Attending', state: 'thinking', status: s.procedure.status, seesPreview: preview })
+  }
+
   if (s.gate.status === 'hold' && s.speech.queued.length > 0) {
     out.push({
       id: 'gate',
