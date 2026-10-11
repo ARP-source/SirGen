@@ -220,19 +220,24 @@ function Icon({ id }: { id: string }) {
 /* ---------- card ---------- */
 
 export default function AgentCard({
-  cfg, s, history, selected, onSelect,
+  cfg, s, history, selected, onSelect, cardRef,
 }: {
   cfg: AgentCardConfig
   s: SentinelState
   history: number[]
   selected: boolean
   onSelect: () => void
+  cardRef?: (el: HTMLButtonElement | null) => void
 }) {
   const st = deriveStatus(cfg, s)
+  // The model is composing: the card pops out and a sheet of paper is being written on.
+  const thinking = cfg.kind === 'llm' && slotFor(s, cfg.stateKey)?.state === 'thinking'
   return (
     <button
       type="button"
-      className={`ag-card tone-${st.tone}${selected ? ' selected' : ''}`}
+      ref={cardRef}
+      data-agent={cfg.id}
+      className={`ag-card tone-${st.tone}${selected ? ' selected' : ''}${thinking ? ' thinking' : ''}`}
       onClick={onSelect}
       aria-pressed={selected}
       aria-label={`${cfg.title}, ${cfg.subtitle}, ${st.word}`}
@@ -241,7 +246,21 @@ export default function AgentCard({
         <div className="ag-title">{cfg.title}</div>
         <div className="ag-sub">{cfg.subtitle}</div>
       </div>
-      <div className="ag-icon"><Icon id={cfg.id} /></div>
+      <div className="ag-icon">
+        <div className="ag-3d">
+          <div className="ag-obj">
+            <div className="ag-layer back"><Icon id={cfg.id} /></div>
+            <div className="ag-layer mid"><Icon id={cfg.id} /></div>
+            <div className="ag-layer front"><Icon id={cfg.id} /></div>
+          </div>
+          <i className="ag-shadow" />
+        </div>
+        {thinking && (
+          <div className="ag-paper" title="writing a message" aria-hidden="true">
+            <i /><i /><i /><i />
+          </div>
+        )}
+      </div>
       <div className="ag-status">
         <span className="ag-state"><i className="ag-dot" />{st.word}</span>
         <Sparkline values={history} label={SPARK_LABEL[cfg.kind]} />

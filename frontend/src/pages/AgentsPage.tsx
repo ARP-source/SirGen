@@ -1,13 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { fmt, useSentinelState } from '../api'
 import type { AgentMessage, SentinelState } from '../types'
 import { AGENT_ROSTER, type AgentCardConfig } from '../agentsRoster'
+import { CAT_LABEL, useAuditEntries } from '../agentsAudit'
 import AgentCard, { deriveStatus, sampleFor, slotFor, visionLive } from '../components/AgentCard'
+import ActionsTimeline from '../components/ActionsTimeline'
+import CommunicationPanel from '../components/CommunicationPanel'
+import PlaneLayer, { usePlaneLayer } from '../components/PlaneLayer'
 import { CATEGORY_LABEL } from '../components/Agents'
 import SourceChip from '../components/SourceChip'
 
 const HISTORY = 60
+const DELIB_CARD_IDS = ['surgical', 'anesthesia', 'record'] as const
+const AGENT_TO_CARD: Record<string, string> = { surgical: 'surgical', anesthesia: 'anesthesia', record: 'record', procedure: 'procedure', safety: 'safety' }
+
 type History = Record<string, number[]>
+
+function catLabel(cat: string): string {
+  return CAT_LABEL[cat] ?? CATEGORY_LABEL[cat] ?? cat
+}
 
 /** Ring buffer of the last HISTORY distinct samples per card, filled only while the page is open. Never seeded. */
 function pushSamples(prev: History, s: SentinelState): History {
@@ -27,7 +38,7 @@ function Message({ msg }: { msg: AgentMessage }) {
   return (
     <>
       <div className="verdict">
-        <span className={`cat ${msg.category}`}>{CATEGORY_LABEL[msg.category] ?? msg.category}</span>
+        <span className={`cat ${msg.category}`}>{catLabel(msg.category)}</span>
         <span className="conf">confidence: <b>{msg.confidence}</b></span>
         <span className="rnd">round {msg.round}</span>
       </div>
@@ -58,7 +69,7 @@ function LlmDetail({ cfg, s }: { cfg: AgentCardConfig; s: SentinelState }) {
       </div>
     )
   }
-  const msg = slot.message
+  const msg = slot.message as (AgentMessage & { intent?: string; next?: string; concern?: string; verdict?: string; proposal?: string; origin?: string }) | null
   const changed = slot.round1 && msg && msg.round === 2 && slot.round1.category !== msg.category
   return (
     <div className={`agent state-${slot.state}`}>
@@ -73,9 +84,19 @@ function LlmDetail({ cfg, s }: { cfg: AgentCardConfig; s: SentinelState }) {
           ))}
         </ul>
       )}
-      {msg ? <Message msg={msg} /> : <div className="muted small">No message yet.</div>}
+      {msg ? (
+        <>
+          <Message msg={msg} />
+          {msg.intent && <p className="small">Intent: {msg.intent}</p>}
+          {msg.next && <p className="small">Next: {msg.next}</p>}
+          {msg.concern && <p className="small chain-bad">Concern: {msg.concern}</p>}
+          {msg.proposal && cfg.id === 'safety' && <p className="small muted">Checked: {msg.proposal}</p>}
+        </>
+      ) : (
+        <div className="muted small">No message yet.</div>
+      )}
       {changed && slot.round1 && (
-        <div className="small muted">Changed from round 1: {CATEGORY_LABEL[slot.round1.category] ?? slot.round1.category} ({slot.round1.confidence}).</div>
+        <div className="small muted">Changed from round 1: {catLabel(slot.round1.category)} ({slot.round1.confidence}).</div>
       )}
       {slot.state === 'unavailable' && (
         <div className="unavail">
@@ -217,17 +238,71 @@ function Detail({ cfg, s }: { cfg: AgentCardConfig; s: SentinelState }) {
   }
 }
 
+function llmMessageKey(cfg: AgentCardConfig, s: SentinelState): string | null {
+  if (cfg.kind !== 'llm') return null
+  const msg = slotFor(s, cfg.stateKey)?.message
+  if (!msg?.hypothesis) return null
+  return `${msg.round}:${msg.category}:${msg.hypothesis}`
+}
+
 export default function AgentsPage() {
   const { state: s, link } = useSentinelState()
   const [hist, setHist] = useState<History>({})
-  // ?agent=<id> preselects a card so a presenter can deep-link to one agent's detail.
+  const [commOpen, setCommOpen] = useState(false)
   const [selected, setSelected] = useState<string | null>(() => {
     const q = new URLSearchParams(window.location.search).get('agent')
     return q && AGENT_ROSTER.some((c) => c.id === q) ? q : null
   })
+  const detailRef = useRef<HTMLElement>(null)
+  const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const prevMsg = useRef<Record<string, string>>({})
+  const { layerRef, fly } = usePlaneLayer()
+  const { rows: auditRows, error: auditError, loaded: auditLoaded } = useAuditEntries(commOpen || selected !== null)
 
   useEffect(() => { document.title = 'Sentinel-OR · Agents' }, [])
   useEffect(() => { if (s) setHist((h) => pushSamples(h, s)) }, [s])
+
+  useEffect(() => {
+    if (!selected) return
+    detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [selected])
+
+  useEffect(() => {
+    if (!s) return
+    const prev = prevMsg.current
+    for (const cfg of AGENT_ROSTER) {
+      if (cfg.kind !== 'llm') continue
+      const key = llmMessageKey(cfg, s)
+      if (!key || key === prev[cfg.id]) continue
+      prev[cfg.id] = key
+      const from = cardRefs.current[cfg.id]
+      const msg = slotFor(s, cfg.stateKey)?.message
+      if (!from || !msg) continue
+      if (msg.round === 2 && msg.responds_to.length > 0) {
+        msg.responds_to.forEach((r, i) => {
+          const toId = AGENT_TO_CARD[r.agent] ?? r.agent
+          fly(from, cardRefs.current[toId], i * 110)
+        })
+      } else if (msg.round === 1 && (DELIB_CARD_IDS as readonly string[]).includes(cfg.id)) {
+        let delay = 0
+        for (const other of DELIB_CARD_IDS) {
+          if (other === cfg.id) continue
+          const st = slotFor(s, other)?.state
+          if (st && st !== 'idle') {
+            fly(from, cardRefs.current[other], delay)
+            delay += 90
+          }
+        }
+        fly(from, cardRefs.current.gate, delay)
+      } else if (cfg.id === 'procedure') {
+        fly(from, cardRefs.current.safety ?? cardRefs.current.gate, 0)
+      } else if (cfg.id === 'safety') {
+        fly(from, cardRefs.current.gate, 0)
+      }
+    }
+  }, [s, fly])
+
+  const pick = (id: string) => () => setSelected((cur) => (cur === id ? null : id))
 
   if (!s) {
     return (
@@ -247,10 +322,13 @@ export default function AgentsPage() {
   const m = s.metrics
 
   return (
-    <div className="agents-page">
+    <div className={`agents-page${commOpen ? ' ag-comm-open' : ''}`}>
+      <PlaneLayer layerRef={layerRef} />
+      {commOpen && <CommunicationPanel rows={auditRows} onClose={() => setCommOpen(false)} />}
       <header className="ag-header">
         <div className="ag-brand"><b>SWARM</b> <span>AGENTS</span></div>
         <div className="ag-right">
+          <button type="button" className="small-btn ag-comm-btn" onClick={() => setCommOpen(true)}>Communication</button>
           <span className={`ag-pill tone-${link === 'live' ? 'live' : 'down'}`}><i className="ag-dot" />{link === 'live' ? 'ACTIVE' : `LINK ${link.toUpperCase()}`}</span>
           <span className="ag-hw">
             <b>128 GB unified memory</b>
@@ -264,8 +342,15 @@ export default function AgentsPage() {
 
       <div className="ag-row">
         {AGENT_ROSTER.map((cfg) => (
-          <AgentCard key={cfg.id} cfg={cfg} s={s} history={hist[cfg.id] ?? []} selected={selected === cfg.id}
-            onSelect={() => setSelected((cur) => (cur === cfg.id ? null : cfg.id))} />
+          <AgentCard
+            key={cfg.id}
+            cfg={cfg}
+            s={s}
+            history={hist[cfg.id] ?? []}
+            selected={selected === cfg.id}
+            onSelect={pick(cfg.id)}
+            cardRef={(el) => { cardRefs.current[cfg.id] = el }}
+          />
         ))}
       </div>
 
@@ -280,7 +365,7 @@ export default function AgentsPage() {
         </span>
       </div>
 
-      <section className="ag-detail">
+      <section className="ag-detail" ref={detailRef}>
         {sel ? (
           <>
             <div className="ag-detail-head">
@@ -289,9 +374,10 @@ export default function AgentsPage() {
             </div>
             <div className="ag-detail-model">{sel.category} <span className="ag-slash">/</span> {sel.model}{sel.note ? <> · {sel.note}</> : null}</div>
             <Detail cfg={sel} s={s} />
+            <ActionsTimeline cfg={sel} rows={auditRows} error={auditError} loaded={auditLoaded} />
           </>
         ) : (
-          <div className="muted ag-hint">Click a card to see what that agent sees, its latest message and why it is unavailable, if it is.</div>
+          <div className="muted ag-hint">Click a card to scroll here: what that agent sees, its latest message, and every action it logged.</div>
         )}
       </section>
 

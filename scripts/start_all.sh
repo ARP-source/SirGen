@@ -8,7 +8,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SESSION=dl
-VIDEO="${SENTINEL_VIDEO:-$HOME/assets/data/holoscan_sample/surgical_video.264}"
+VIDEO="${SENTINEL_VIDEO:-$HOME/sentinel-demo/video13_dissect_to_clip_90s.mp4}"
 LIGHTNING_WAIT_S="${LIGHTNING_WAIT_S:-3600}"
 
 say() { printf '[start_all] %s\n' "$*"; }
