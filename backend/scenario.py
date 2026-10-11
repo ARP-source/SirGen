@@ -46,7 +46,10 @@ class VitalsSeries:
         return len(next(iter(self.values.values())))
 
     def at(self, t_s: int) -> dict[str, Optional[float]]:
-        i = max(0, min(int(t_s), len(self) - 1))
+        """Past the end of the recorded series nothing was measured: every field is None (hard rule 6)."""
+        if int(t_s) > len(self) - 1:
+            return {name: None for name in VITAL_FIELDS}
+        i = max(0, int(t_s))
         return {name: self.values[name][i] for name in VITAL_FIELDS}
 
     def window(self, start: int, end: int) -> list[dict[str, Optional[float]]]:

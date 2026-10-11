@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from typing import Optional, Protocol
 
@@ -27,6 +28,7 @@ R1_MAP_BELOW = 65.0
 R1_HOLD_S = 60
 R2_SBP_ABOVE = 180.0
 R2_HOLD_S = 5
+RUN_S = float(os.environ.get("SENTINEL_RUN_S", "0"))
 
 
 class BaselineRule:
@@ -109,6 +111,12 @@ class ScenarioPlayer:
                    "vitals_source": sc.series.source, "vitals_source_kind": sc.series.source_kind,
                    "event_type": sc.event_type})
 
+    @property
+    def run_s(self) -> float:
+        """Run length: the scenario's segment, or longer with SENTINEL_RUN_S (e.g. a full surgery video).
+        Vitals past the end of the recorded series read as not measured."""
+        return float(max(self.scenario.duration_s, RUN_S))
+
     # ---- presenter controls -------------------------------------------------
     def select(self, scenario_id: str) -> None:
         self.scenario = self.scenarios[scenario_id]
@@ -160,7 +168,7 @@ class ScenarioPlayer:
     def tick(self, dt: float) -> None:
         """Advance the clock by dt seconds (if playing) and process what happened."""
         if self.playing:
-            self.clock = min(self.clock + dt, float(self.scenario.duration_s))
+            self.clock = min(self.clock + dt, float(self.run_s))
         while self._next_second <= int(self.clock):
             self._process_second(self._next_second)
             self._next_second += 1
@@ -171,11 +179,11 @@ class ScenarioPlayer:
         ev_t = self.scenario.event_t_s
         if ev_t is not None and not self._scheduled_fired and self.clock >= ev_t:
             self._fire("scenario", float(ev_t), detected_at=time.perf_counter())
-        if self.playing and self.clock >= self.scenario.duration_s:
+        if self.playing and self.clock >= self.run_s:
             self._set_playing(False)
             self.ended = True
             self._add_timeline("info", "segment end")
-            self._log("segment_end", "scenario segment ended", {"duration_s": self.scenario.duration_s})
+            self._log("segment_end", "scenario segment ended", {"duration_s": self.run_s})
             self._sync()
 
     async def run(self, hz: float = 20.0) -> None:
@@ -332,12 +340,13 @@ class ScenarioPlayer:
 
     def _alert_text(self) -> str:
         s = self.scenario.series
-        now = s.at(self._vitals_t)
+        vt = min(self._vitals_t, len(s) - 1)  # the last recorded second if the clock has run past the series
+        now = s.at(vt)
         if self.scenario.event_type == "art_spike":
-            prev = s.at(max(0, self._vitals_t - 2))["sbp"]
+            prev = s.at(max(0, vt - 2))["sbp"]
             body = f"arterial SBP {now['sbp']:.0f} mmHg (was {prev:.0f} mmHg 2 s earlier)"
         else:
-            window = [s.at(t)["map"] for t in range(max(0, self._vitals_t - 60), self._vitals_t + 1)]
+            window = [s.at(t)["map"] for t in range(max(0, vt - 60), vt + 1)]
             base = max(v for v in window if v is not None)
             body = f"MAP {now['map']:.0f} mmHg, {base - now['map']:.0f} mmHg below its 60-s baseline"
         if s.source_kind == "real_time_shifted":
