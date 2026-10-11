@@ -22,7 +22,10 @@ def test_scenario_event_raises_alert_immediately(scenarios):
         ev = store.state.event
         assert ev is not None and ev.trigger == "scenario" and ev.event_type == "map_drop"
         assert ev.event_timestamp == 30.0 and abs(ev.alert_shown_at - 30.0) < 0.2
-        assert ev.alert_text.startswith("SIMULATED TELEMETRY ALERT")
+        if scenarios["drug_effect"].series.source_kind == "real_time_shifted":
+            assert ev.simulated is False and "time-shifted" in ev.alert_text
+        else:
+            assert ev.alert_text.startswith("SIMULATED TELEMETRY ALERT")
         assert ev.event_to_alert_ms is not None and 0 <= ev.event_to_alert_ms < 50
         assert store.state.metrics.event_to_alert_ms == ev.event_to_alert_ms
         assert ev.context_status == "unavailable"

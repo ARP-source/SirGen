@@ -24,7 +24,7 @@
     "confirm_steps": 3,
     "confirm_note": "A candidate transition must be true for 3 consecutive steps before the phase changes.",
     "min_dwell_s": 15,
-    "min_dwell_note": "No transition out of a phase until it has been held this long.",
+    "min_dwell_note": "No transition out of a confirmed phase until it has been held this long. The opening Preparation label is a placeholder and may leave once its rule has held for confirm_steps.",
     "exit_lower_than_enter": "Enter thresholds (below) are higher than the 'absent' conditions used to leave a phase, so the label does not flicker.",
     "detector_unavailable": "Hold the current phase and show it as stale; never guess."
   },
@@ -48,7 +48,7 @@
     {"id": "r3", "from": "ClippingCutting", "to": "GallbladderDissection", "when": "Clipper and Scissors absent for >= 20 s and f(Hook) >= 0.5 and Scissors seen at least once in this phase"},
     {"id": "r4", "from": "ClippingCutting", "to": "CalotTriangleDissection", "when": "Clipper and Scissors absent for >= 20 s and f(Hook) >= 0.5 and Scissors never seen in this phase"},
     {"id": "r5", "from": "GallbladderDissection", "to": "GallbladderPackaging", "when": "f(SpecimenBag) >= 0.3"},
-    {"id": "r6", "from": ["GallbladderDissection", "GallbladderPackaging", "GallbladderRetraction"], "to": "CleaningCoagulation", "when": "(f(Irrigator) >= 0.3 and f(Bipolar) >= 0.2) or f(Irrigator) >= 0.6"},
+    {"id": "r6", "from": ["GallbladderDissection", "GallbladderPackaging", "GallbladderRetraction"], "to": "CleaningCoagulation", "when": "(f(Irrigator) >= 0.3 and f(Bipolar) >= 0.2) or f(Irrigator) >= 0.6 or (f(Bipolar) >= 0.3 and f(Hook) < 0.2)", "note": "Irrigator is the usual cleaning cue. A bipolar run with the hook out of the window is the same cue when suction is not detected."},
     {"id": "r7", "from": "CleaningCoagulation", "to": "GallbladderRetraction", "when": "f(SpecimenBag) >= 0.3 and Irrigator and Bipolar absent for >= 10 s"},
     {"id": "r8", "from": "GallbladderPackaging", "to": "GallbladderRetraction", "when": "dwell in GallbladderPackaging >= 60 s and SpecimenBag absent for >= 10 s, then f(SpecimenBag) >= 0.3 again"}
   ],

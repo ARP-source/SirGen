@@ -387,9 +387,12 @@ async def ws_state(ws: WebSocket) -> None:
 
 
 @app.get("/video.mjpg")
-async def video_mjpg(request: Request, boxes: int = 0) -> StreamingResponse:
+async def video_mjpg(request: Request, boxes: int = 0, privacy: int = 0) -> StreamingResponse:
     """Plain frames, or with ?boxes=1 the newest frame the models have seen with its own boxes
-    drawn on it (falls back to plain frames while the vision service is down)."""
+    drawn on it (falls back to plain frames while the vision service is down).
+
+    ?privacy=1 sends the black-and-white outline copy. Inference always uses the original frame.
+    """
     svc = services(request)
     plain = svc.video
     boxed = svc.vision if boxes and svc.vision is not None else None
@@ -401,6 +404,10 @@ async def video_mjpg(request: Request, boxes: int = 0) -> StreamingResponse:
                 a = boxed.annotated()
                 if a is not None:
                     return a
+            if privacy:
+                mirrored = plain.latest_privacy()
+                if mirrored is not None:
+                    return mirrored
             return plain.latest()
 
     video = _Source

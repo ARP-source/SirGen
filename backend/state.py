@@ -10,8 +10,12 @@ The store is used from the asyncio event loop only (no locks needed).
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
+import re
 import time
+from pathlib import Path
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -28,7 +32,9 @@ ATTRIBUTION = (
 VITALS_CREDIT = "Vitals: VitalDB case 59, Lee HC et al., Sci Data 2022 (CC BY 4.0)."
 HOLOHUB_CREDIT = "Video: NVIDIA HoloHub endoscopy sample data."
 HOLOHUB_NAME = "NVIDIA HoloHub endoscopy sample"
-FOOTAGE_LABEL = "Recorded footage · Research prototype"
+FOOTAGE_LABEL = (
+    "Recorded lap clip · models infer frame-by-frame as it plays on this machine · research prototype"
+)
 FOOTAGE_LIVE_LABEL = (
     "Live scope feed · Research prototype · inference on this session, not trained on this case"
 )
@@ -215,6 +221,8 @@ class VideoInfo(BaseModel):
     decode_error: str = ""
     mean_brightness: Optional[float] = None
     black_frames: bool = False
+    inference_frames: str = "original"
+    privacy_mirror: str = "black field with white outlines on the screen only; models and agents receive the original frames"
 
 
 class AuditInfo(BaseModel):
@@ -231,6 +239,48 @@ class AuditInfo(BaseModel):
     verified_entries: Optional[int] = None
     verify_note: str = ""
     last_kind: Optional[str] = None
+
+
+_CHOLEC_ID = re.compile(r"video(\d+)", re.IGNORECASE)
+_TOOL_SPLIT: Optional[tuple[frozenset[int], frozenset[int]]] = None
+
+
+def cholec_video_id(source: Optional[str]) -> Optional[int]:
+    m = _CHOLEC_ID.search(source or "")
+    return int(m.group(1)) if m else None
+
+
+def tool_detector_split() -> tuple[frozenset[int], frozenset[int]]:
+    """Train and validation Cholec80 video ids from the instrument detector's metadata. Cached."""
+    global _TOOL_SPLIT
+    if _TOOL_SPLIT is None:
+        path = Path(os.environ.get("SENTINEL_MODELS", Path.home() / "sentinel-train/models")).expanduser() / "tools_classes.json"
+        train: set[int] = set()
+        val: set[int] = set()
+        if path.is_file():
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            train = {int(x) for x in raw.get("train_videos") or []}
+            val = {int(x) for x in raw.get("val_videos") or []}
+        _TOOL_SPLIT = (frozenset(train), frozenset(val))
+    return _TOOL_SPLIT
+
+
+def footage_label(source: Optional[str]) -> str:
+    """On-screen line. Names the clip's relationship to the detector split when the file is videoNN."""
+    vid = cholec_video_id(source)
+    if vid is None:
+        return FOOTAGE_LABEL
+    train, val = tool_detector_split()
+    base = "Inference runs on each frame as this file plays. Anatomy and CVS models were trained on Endoscapes, not this file. Research prototype."
+    if vid in train:
+        listed = ", ".join(str(v) for v in sorted(train))
+        return f"Cholec80 video {vid} is in the instrument-detector training set (videos {listed}). Do not present it as unseen. {base}"
+    if vid in val:
+        return f"Cholec80 video {vid} is the instrument detector's validation video, not a training video. {base}"
+    if train:
+        listed = ", ".join(str(v) for v in sorted(train))
+        return f"Cholec80 video {vid} was not in the instrument-detector training set (trained on videos {listed} only). {base}"
+    return f"Cholec80 video {vid}. {base}"
 
 
 def is_holohub_sample(source: Optional[str]) -> bool:
@@ -254,9 +304,10 @@ class Labels(BaseModel):
     def for_video(cls, source: Optional[str], *, live_capture: bool = False) -> "Labels":
         if live_capture:
             return cls(footage=FOOTAGE_LIVE_LABEL, attribution=LIVE_ATTRIBUTION, composite=FOOTAGE_LIVE_LABEL)
+        footage = footage_label(source)
         if not is_holohub_sample(source):
-            return cls()
-        return cls(attribution=f"{HOLOHUB_CREDIT} {VITALS_CREDIT}", composite=footage_text(COMPOSITE_LABEL, source))
+            return cls(footage=footage)
+        return cls(footage=footage, attribution=f"{HOLOHUB_CREDIT} {VITALS_CREDIT}", composite=footage_text(COMPOSITE_LABEL, source))
 
 
 def _default_agents() -> dict[str, AgentSlot]:

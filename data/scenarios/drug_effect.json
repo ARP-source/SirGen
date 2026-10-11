@@ -38,8 +38,8 @@
         1140
       ],
       "real_window_note": "Minutes 6-19 from casestart: A-line connected at about minute 6; MAP about 44-52 at minutes 7-9 and 54-65 at minutes 12-17, recovering to 86-105 by minutes 18-19; arterial spikes 220-277 at minutes 16-17 (artifact, exclude). Values read via a page fetcher from 1-min FHIR chunks; re-check.",
-      "excerpt_real_start_s": "TODO-after-fetch: pick a 120-s excerpt inside the window (scenario t_s = real time_s - excerpt_real_start_s)",
-      "time_shift": "Real event is post-induction, before incision (about minute 20). Shown during CalotTriangleDissection; must be labelled time-shifted."
+      "excerpt_real_start_s": 400,
+      "time_shift": "Real samples from time_s 400-520 (about minutes 6.7-8.7), after the arterial line reads physiologic pressure and while propofol and remifentanil TCI are running. Incision is at time_s 1214, so this window is post-induction and before incision. Shown during the demo video; labelled time-shifted."
     },
     "source_id": "vit-art",
     "fallback_keyframes_label": "approximate: shaped from the 1-min summaries in the research notes, not real samples. t_s 0-20 and all HR values are placeholders (no real values known yet).",
@@ -152,9 +152,21 @@
     "nibp": [
       {
         "source_id": "vit-nibp-01",
-        "t_s": null,
-        "note": "Fill from NIBP_* columns in the excerpt if a cuff reading exists",
-        "provenance": "real: VitalDB case 59 (pending)"
+        "t_s": 1,
+        "sbp": 83,
+        "dbp": 48,
+        "map": 55,
+        "note": "Cuff at real time_s 401, held through real time_s 487.",
+        "provenance": "real: VitalDB case 59 NIBP"
+      },
+      {
+        "source_id": "vit-nibp-02",
+        "t_s": 89,
+        "sbp": 72,
+        "dbp": 43,
+        "map": 55,
+        "note": "Cuff at real time_s 489.",
+        "provenance": "real: VitalDB case 59 NIBP"
       }
     ]
   },
@@ -163,22 +175,22 @@
       "source_id": "drug-01",
       "t_s": null,
       "drug": "propofol",
-      "detail": "TCI running (Orchestra PPF20); effect-site about 2.7 mcg/mL around minute 20",
-      "provenance": "real: VitalDB case 59 tracks (approximate from notes; fill exact times and values from PPF20_CE/CT/RATE)"
+      "detail": "TCI running (Orchestra PPF20). Effect-site about 3.5 mcg/mL at the start of this window (real time_s 400), about 3.0 by real time_s 520.",
+      "provenance": "real: VitalDB case 59 PPF20_CE"
     },
     {
       "source_id": "drug-02",
       "t_s": null,
       "drug": "remifentanil",
-      "detail": "TCI running (Orchestra RFTN20); effect-site about 4.5 ng/mL",
-      "provenance": "real: VitalDB case 59 tracks (approximate from notes; fill from RFTN20_CE/CT/RATE)"
+      "detail": "TCI running (Orchestra RFTN20). Effect-site about 5.0 ng/mL at real time_s 400, about 4.5 by real time_s 520. Target set to 3.3 ng/mL at real time_s 446 (scenario t 46 s).",
+      "provenance": "real: VitalDB case 59 RFTN20_CE and RFTN20_CT"
     },
     {
       "source_id": "drug-03",
-      "t_s": -60,
+      "t_s": 44,
       "drug": "propofol",
-      "detail": "TCI target increased (rate increase)",
-      "provenance": "synthetic placeholder: replace with a real PPF20_CT/RATE change from the fetch script output if one precedes the excerpt; otherwise delete and reword to 'propofol and remifentanil running since induction'"
+      "detail": "TCI target (PPF20_CT) set to 1 mcg/mL at real time_s 444.",
+      "provenance": "real: VitalDB case 59 PPF20_CT"
     }
   ],
   "baseline_rule": {
@@ -187,6 +199,6 @@
     "fires": "R1",
     "fires_at_t_s": 81,
     "correct": true,
-    "comment": "Right to alarm (pressure is low) but gives no cause; with fallback keyframes it fires about 50 s after the code trigger. Recompute fires_at_t_s on real data."
+    "comment": "Right to alarm (pressure is low) but gives no cause. 81 s is the fallback-keyframe time. When vitaldb_case59_tracks.csv is present the app replaces this with the time measured on the excerpt."
   }
 }

@@ -7,6 +7,7 @@ import AgentCard, { deriveStatus, sampleFor, slotFor, visionLive } from '../comp
 import ActionsTimeline from '../components/ActionsTimeline'
 import CommunicationPanel from '../components/CommunicationPanel'
 import LiveActivityStrip from '../components/LiveActivityStrip'
+import SwarmFeed from '../components/SwarmFeed'
 import PlaneLayer, { usePlaneLayer } from '../components/PlaneLayer'
 import { CATEGORY_LABEL } from '../components/Agents'
 import AppNav from '../components/AppNav'
@@ -259,7 +260,7 @@ export default function AgentsPage() {
   const cardRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const prevMsg = useRef<Record<string, string>>({})
   const { layerRef, fly } = usePlaneLayer()
-  const { rows: auditRows, error: auditError, loaded: auditLoaded } = useAuditEntries(commOpen || selected !== null)
+  const { rows: auditRows, error: auditError, loaded: auditLoaded } = useAuditEntries(true, 2500)
 
   useEffect(() => { document.title = 'Sentinel-OR · Agents' }, [])
   useEffect(() => { if (s) setHist((h) => pushSamples(h, s)) }, [s])
@@ -359,6 +360,15 @@ export default function AgentsPage() {
       </div>
 
       <LiveActivityStrip s={s} />
+
+      {s.event?.context_status === 'pending' && (
+        <div className="ag-swarm-busy" role="status">
+          <span className="delib-k">Deliberation in progress</span>
+          <span className="muted">Round {d.round} · {d.status} · messages appear in the swarm log below</span>
+        </div>
+      )}
+
+      <SwarmFeed rows={auditRows} />
 
       <div className="ag-delib">
         <span className="delib-k">Deliberation</span>

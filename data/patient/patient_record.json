@@ -25,11 +25,11 @@
     {"source_id": "enc-04", "field": "anaesthesia_type", "value": "General", "detail": "TIVA with propofol and remifentanil target-controlled infusion (Orchestra PPF20 / RFTN20 tracks present)", "provenance": "real: VitalDB case 59 /cases", "verification": "re-check with fetch script (ane_type, tracks)"},
     {"source_id": "enc-05", "field": "arterial_line", "value": "Left radial", "provenance": "real: VitalDB case 59 /cases", "verification": "re-check with fetch script (aline1)"},
     {"source_id": "enc-06", "field": "case_times_s_from_casestart", "value": {"casestart": 0, "opstart": 1214, "opend": 2114, "caseend": 3352}, "provenance": "real: VitalDB case 59 /cases", "verification": "re-check with fetch script"},
-    {"source_id": "enc-07", "field": "urgency", "value": "Urgent; admitted via emergency department 16 h before incision with 2 days of right upper quadrant pain and fever", "provenance": "synthetic", "verification": "reconcile with /cases emop"}
+    {"source_id": "enc-07", "field": "urgency", "value": "Not flagged as an emergency operation (emop 0)", "provenance": "real: VitalDB case 59 /cases", "verification": "emop 0 fetched 2026-10-11"}
   ],
   "history": [
     {"source_id": "hx-01", "condition": "Paroxysmal atrial fibrillation", "detail": "Diagnosed about 6 years ago; on oral anticoagulation (meds-01)", "provenance": "synthetic"},
-    {"source_id": "hx-02", "condition": "Essential hypertension", "detail": "About 15 years; on losartan (meds-02)", "provenance": "synthetic", "verification": "reconcile with /cases preop_htn"},
+    {"source_id": "hx-02", "condition": "Essential hypertension", "detail": "Synthetic history on losartan (meds-02). VitalDB preop_htn for this case is 0, so this line is not confirmed by the case row.", "provenance": "synthetic", "verification": "preop_htn 0 in vitaldb_case59_clinical.json"},
     {"source_id": "hx-03", "condition": "Hyperlipidaemia", "detail": "On atorvastatin (meds-03)", "provenance": "synthetic"},
     {"source_id": "hx-04", "condition": "Biliary colic", "detail": "Two episodes in the past year; gallstones on ultrasound", "provenance": "synthetic"},
     {"source_id": "hx-05", "condition": "Prior surgery: open right inguinal hernia repair", "detail": "About 12 years ago under general anaesthesia; no anaesthetic problems recorded", "provenance": "synthetic"},
@@ -45,11 +45,11 @@
     {"source_id": "alg-01", "substance": "codeine", "reaction": "Nausea and vomiting (intolerance)", "severity": "mild", "provenance": "synthetic"}
   ],
   "labs": [
-    {"source_id": "lab-01", "test": "Haemoglobin (pre-op)", "value": 11.2, "unit": "g/dL", "provenance": "real: VitalDB case 59 /cases", "verification": "re-check with fetch script (preop_hb)"},
-    {"source_id": "lab-02", "test": "Creatinine (pre-op)", "value": 1.11, "unit": "mg/dL", "provenance": "real: VitalDB case 59 /cases", "verification": "re-check with fetch script (preop_cr)"},
-    {"source_id": "lab-03", "test": "Platelets (pre-op)", "value": null, "unit": "as in VitalDB", "fill_from": "case.preop_plt", "provenance": "pending: fill from fetch script"},
-    {"source_id": "lab-04", "test": "Prothrombin time (pre-op)", "value": null, "unit": "as in VitalDB", "fill_from": "case.preop_pt", "provenance": "pending: fill from fetch script"},
-    {"source_id": "lab-05", "test": "aPTT (pre-op)", "value": null, "unit": "as in VitalDB", "fill_from": "case.preop_aptt", "provenance": "pending: fill from fetch script"},
+    {"source_id": "lab-01", "test": "Haemoglobin (pre-op)", "value": 11.2, "unit": "g/dL", "provenance": "real: VitalDB case 59 /cases", "verification": "preop_hb 11.2 fetched 2026-10-11"},
+    {"source_id": "lab-02", "test": "Creatinine (pre-op)", "value": 1.11, "unit": "mg/dL", "provenance": "real: VitalDB case 59 /cases", "verification": "preop_cr 1.11 fetched 2026-10-11"},
+    {"source_id": "lab-03", "test": "Platelets (pre-op)", "value": 104, "unit": "x10^3/uL", "provenance": "real: VitalDB case 59 /cases", "verification": "preop_plt 104 fetched 2026-10-11"},
+    {"source_id": "lab-04", "test": "Prothrombin time (pre-op)", "value": 91, "unit": "%", "provenance": "real: VitalDB case 59 /cases", "verification": "preop_pt 91 fetched 2026-10-11; VitalDB stores PT as percent"},
+    {"source_id": "lab-05", "test": "aPTT (pre-op)", "value": 32.9, "unit": "s", "provenance": "real: VitalDB case 59 /cases", "verification": "preop_aptt 32.9 fetched 2026-10-11"},
     {"source_id": "lab-06", "test": "Apixaban-calibrated anti-Xa level", "value": "not sent", "provenance": "synthetic"},
     {"source_id": "lab-07", "test": "Type and screen", "value": "Completed; antibody screen negative", "provenance": "synthetic"}
   ],

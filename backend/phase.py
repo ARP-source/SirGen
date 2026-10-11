@@ -20,7 +20,7 @@ EXPECTED_WHEN: dict[str, str] = {
     "r3": "Clipper and Scissors absent for >= 20 s and f(Hook) >= 0.5 and Scissors seen at least once in this phase",
     "r4": "Clipper and Scissors absent for >= 20 s and f(Hook) >= 0.5 and Scissors never seen in this phase",
     "r5": "f(SpecimenBag) >= 0.3",
-    "r6": "(f(Irrigator) >= 0.3 and f(Bipolar) >= 0.2) or f(Irrigator) >= 0.6",
+    "r6": "(f(Irrigator) >= 0.3 and f(Bipolar) >= 0.2) or f(Irrigator) >= 0.6 or (f(Bipolar) >= 0.3 and f(Hook) < 0.2)",
     "r7": "f(SpecimenBag) >= 0.3 and Irrigator and Bipolar absent for >= 10 s",
     "r8": "dwell in GallbladderPackaging >= 60 s and SpecimenBag absent for >= 10 s, then f(SpecimenBag) >= 0.3 again",
 }
@@ -103,7 +103,11 @@ class PhaseTracker:
         self._set_by = "tracker"
 
     def f(self, tool: str) -> float:
-        return sum(tool in s for s in self._window) / self.rules.window_s
+        # While the opening label is still the placeholder, score against samples seen so far
+        # so a hook already in view is not diluted by an empty 10-second window.
+        opening = self.phase == self.rules.start_phase and self.since == self._start_t
+        denom = len(self._window) if opening and self._window else self.rules.window_s
+        return sum(tool in s for s in self._window) / denom
 
     def absent_for(self, tool: str, t: float) -> float:
         return t - self._last_seen.get(tool, self._start_t)
@@ -130,8 +134,11 @@ class PhaseTracker:
         self._streak = self._streak + 1 if candidate is not None and candidate == self._candidate else (
             1 if candidate is not None else 0)
         self._candidate = candidate
+        # Preparation is a placeholder until tools say otherwise. Later phases still wait min_dwell_s.
+        opening = self.phase == self.rules.start_phase and self.since == self._start_t
+        dwell_ok = opening or dwell >= self.rules.min_dwell_s
         if (candidate is not None and self._streak >= self.rules.confirm_steps
-                and dwell >= self.rules.min_dwell_s and (self.phase, candidate) in self.rules.allowed):
+                and dwell_ok and (self.phase, candidate) in self.rules.allowed):
             self._enter(candidate, t)
         return self._result(t, stale=False)
 
@@ -151,7 +158,8 @@ class PhaseTracker:
             "r3": lambda: clip_scissors_gone() and "Scissors" in self._seen_in_phase,
             "r4": lambda: clip_scissors_gone() and "Scissors" not in self._seen_in_phase,
             "r5": lambda: f("SpecimenBag") >= 0.3,
-            "r6": lambda: (f("Irrigator") >= 0.3 and f("Bipolar") >= 0.2) or f("Irrigator") >= 0.6,
+            "r6": lambda: ((f("Irrigator") >= 0.3 and f("Bipolar") >= 0.2) or f("Irrigator") >= 0.6
+                          or (f("Bipolar") >= 0.3 and f("Hook") < 0.2)),
             "r7": lambda: f("SpecimenBag") >= 0.3 and absent("Irrigator") >= 10 and absent("Bipolar") >= 10,
             "r8": lambda: self._r8_armed and f("SpecimenBag") >= 0.3,
         }

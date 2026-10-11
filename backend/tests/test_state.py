@@ -3,7 +3,8 @@ import json
 
 from fastapi.testclient import TestClient
 
-from backend.state import StateStore
+from backend.state import FOOTAGE_LABEL, Labels, StateStore, footage_label
+import backend.state as state_mod
 
 
 def test_broadcast_is_throttled_and_conflated():
@@ -53,7 +54,7 @@ def test_ws_state_and_controls_end_to_end():
         assert ids == {"true_bleed", "drug_effect", "artifact"}
         with client.websocket_connect("/ws/state") as ws:
             first = json.loads(ws.receive_text())
-            assert "vitals" in first and first["labels"]["footage"] == "Recorded footage · Research prototype"
+            assert "vitals" in first and first["labels"]["footage"] == FOOTAGE_LABEL
             assert first["agents"]["surgical"]["state"] == "idle" and first["agents"]["surgical"]["message"] is None
             assert first["deliberation"]["outcome"] is None and first["metrics"]["deliberation_s"] is None
             assert client.post("/control/scenario/artifact").json()["scenario_id"] == "artifact"
@@ -65,3 +66,16 @@ def test_ws_state_and_controls_end_to_end():
             ev = client.post("/control/trigger").json()["event"]
             assert ev["trigger"] == "presenter" and ev["event_to_alert_ms"] is not None
         assert client.post("/control/scenario/nope").status_code == 404
+
+
+def test_footage_label_names_the_detector_split(monkeypatch):
+    monkeypatch.setattr(state_mod, "_TOOL_SPLIT", (frozenset({42, 43, 44, 45}), frozenset({41})))
+    held = footage_label("/home/asus/sentinel-demo/video13_full.mp4")
+    assert "video 13" in held and "not in the instrument-detector training set" in held and "42" in held
+    trained = footage_label("video42.mp4")
+    assert "training set" in trained and "Do not present it as unseen" in trained
+    val = footage_label("video41.mp4")
+    assert "validation video" in val
+    assert "not trained" not in footage_label("surgical_video.264")
+    labels = Labels.for_video("/tmp/video13_full.mp4")
+    assert "video 13" in labels.footage

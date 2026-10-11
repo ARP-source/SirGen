@@ -21,12 +21,13 @@ def feed(tracker, segments, t0=0):
     return t, history
 
 
-def test_preparation_to_calot_respects_dwell_and_confirm(rules):
+def test_opening_preparation_yields_once_the_hook_holds(rules):
+    """The start label does not wait min_dwell. Three hook seconds are enough to enter Calot."""
     tr = PhaseTracker(rules)
     _, hist = feed(tr, [(30, {"Grasper", "Hook"})])
     phases = dict(hist)
-    assert phases[14] == "Preparation"
-    assert phases[15] == "CalotTriangleDissection"
+    assert phases[1] == "Preparation"
+    assert phases[2] == "CalotTriangleDissection"
 
 
 def test_full_canonical_sequence(rules):
@@ -49,6 +50,35 @@ def test_clipping_without_scissors_backtracks_to_calot(rules):
     tr.force("CalotTriangleDissection", 0)
     feed(tr, [(20, {"Grasper", "Clipper"}), (40, {"Grasper", "Hook"})])
     assert tr.phase == "CalotTriangleDissection"
+
+
+def test_bipolar_without_hook_reaches_cleaning_then_the_bag_reaches_retraction(rules):
+    """Cleaning does not require the irrigator. A bipolar run after the hook is down is enough,
+    and the bag coming back after that bipolar is gone is retraction."""
+    tr = PhaseTracker(rules)
+    tr.force("GallbladderDissection", 0)
+    _, hist = feed(tr, [
+        (20, {"Grasper", "Hook"}),
+        (20, {"Grasper", "SpecimenBag"}),
+        (20, {"Grasper", "Bipolar"}),
+        (20, {"Grasper", "SpecimenBag"}),
+    ])
+    seq = [p for i, (_, p) in enumerate(hist) if i == 0 or p != hist[i - 1][1]]
+    assert seq == ["GallbladderDissection", "GallbladderPackaging", "CleaningCoagulation", "GallbladderRetraction"]
+
+
+def test_one_bipolar_second_during_hook_dissection_does_not_leave(rules):
+    tr = PhaseTracker(rules)
+    tr.force("GallbladderDissection", 0)
+    feed(tr, [(30, {"Hook"}), (1, {"Bipolar"}), (20, {"Hook"})])
+    assert tr.phase == "GallbladderDissection"
+
+
+def test_irrigator_with_bipolar_still_marks_cleaning(rules):
+    tr = PhaseTracker(rules)
+    tr.force("GallbladderDissection", 0)
+    feed(tr, [(20, {"Hook"}), (20, {"Irrigator", "Bipolar"})])
+    assert tr.phase == "CleaningCoagulation"
 
 
 def test_single_blip_does_not_flicker(rules):

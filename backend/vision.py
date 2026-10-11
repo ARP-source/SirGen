@@ -32,34 +32,45 @@ MAX_FPS = float(os.environ.get("SENTINEL_VISION_MAX_FPS", "12"))  # leaves GPU t
 TOOL_COLOR = (80, 200, 255)
 ANATOMY_COLORS = {"cystic_duct": (60, 220, 60), "cystic_artery": (60, 60, 240), "calot_triangle": (230, 200, 40),
                   "cystic_plate": (200, 120, 230), "gallbladder": (40, 160, 200), "tool": (150, 150, 150)}
+# Short names for the on-frame tags. The anatomy class "tool" is the detector's
+# own instrument box; the instrument model draws those, so it is not drawn twice.
+SIGHT_NAMES = {"cystic_plate": "cystic plate", "calot_triangle": "Calot triangle",
+               "cystic_artery": "cystic artery", "cystic_duct": "cystic duct", "gallbladder": "gallbladder"}
+TOOL_NAMES = {"Grasper": "grasper", "Bipolar": "bipolar", "Hook": "hook", "Scissors": "scissors",
+              "Clipper": "clipper", "Irrigator": "irrigator", "SpecimenBag": "specimen bag"}
 
 
 def enabled() -> bool:
     return os.environ.get("SENTINEL_VISION", "1") not in ("0", "false", "off")
 
 
-def draw(frame: np.ndarray, res: dict[str, Any], scale: float) -> np.ndarray:
-    out = frame.copy()
+def _tag(img: np.ndarray, text: str, x: int, y: int, color: tuple[int, int, int]) -> None:
+    """A small name tag sitting on the top edge of a box, kept inside the frame."""
     font = cv2.FONT_HERSHEY_SIMPLEX
-    for d in res.get("anatomy") or []:
-        if d["cls"] in ("tool", "gallbladder"):
-            continue
+    scale, thick = 0.55, 1
+    (tw, th), base = cv2.getTextSize(text, font, scale, thick)
+    h, w = img.shape[:2]
+    x = int(max(0, min(x, w - tw - 8)))
+    y = int(max(th + 6, min(y, h - base - 2)))
+    cv2.rectangle(img, (x, y - th - 6), (x + tw + 8, y + base + 2), (12, 12, 12), -1)
+    cv2.rectangle(img, (x, y - th - 6), (x + tw + 8, y + base + 2), color, 1, cv2.LINE_AA)
+    cv2.putText(img, text, (x + 4, y), font, scale, (255, 255, 255), thick, cv2.LINE_AA)
+
+
+def draw(frame: np.ndarray, res: dict[str, Any], scale: float) -> np.ndarray:
+    """Boxes and names for AI sight. The caution estimate stays on the side rail, not on the field."""
+    out = frame.copy()
+    anatomy = [d for d in (res.get("anatomy") or []) if d.get("cls") not in ("tool",)]
+    anatomy.sort(key=lambda d: abs((d["box"][2] - d["box"][0]) * (d["box"][3] - d["box"][1])), reverse=True)
+    for d in anatomy:
         x1, y1, x2, y2 = (int(v * scale) for v in d["box"])
         c = ANATOMY_COLORS.get(d["cls"], (200, 200, 200))
-        cv2.rectangle(out, (x1, y1), (x2, y2), c, 1, cv2.LINE_AA)
-        cv2.putText(out, ANATOMY_NAMES.get(d["cls"], d["cls"]), (x1 + 3, y2 - 5), font, 0.45, c, 1, cv2.LINE_AA)
+        cv2.rectangle(out, (x1, y1), (x2, y2), c, 2)
+        _tag(out, SIGHT_NAMES.get(d["cls"], ANATOMY_NAMES.get(d["cls"], d["cls"])), x1, y1 - 2, c)
     for d in res.get("tools") or []:
         x1, y1, x2, y2 = (int(v * scale) for v in d["box"])
-        cv2.rectangle(out, (x1, y1), (x2, y2), TOOL_COLOR, 2, cv2.LINE_AA)
-        cv2.putText(out, f"{d['cls']} {d['conf']:.2f}", (x1 + 3, max(14, y1 - 6)), font, 0.5, TOOL_COLOR, 1, cv2.LINE_AA)
-    c = res.get("caution")
-    if c:
-        h, w = out.shape[:2]
-        x1, y1, x2, y2 = c["box"][0] * w, c["box"][1] * h, c["box"][2] * w, c["box"][3] * h
-        centre = (int((x1 + x2) / 2), int((y1 + y2) / 2))
-        axes = (int((x2 - x1) / 2 + 18), int((y2 - y1) / 2 + 18))
-        cv2.ellipse(out, centre, axes, 0, 0, 360, (235, 235, 235), 2, cv2.LINE_AA)
-        cv2.putText(out, c["label"], (max(4, centre[0] - axes[0]), max(16, int(y1) - 24)), font, 0.5, (235, 235, 235), 1, cv2.LINE_AA)
+        cv2.rectangle(out, (x1, y1), (x2, y2), TOOL_COLOR, 2)
+        _tag(out, TOOL_NAMES.get(d["cls"], d["cls"]), x1, y1 - 2, TOOL_COLOR)
     return out
 
 

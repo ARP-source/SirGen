@@ -20,6 +20,7 @@ from typing import Any, Optional
 import cv2
 import numpy as np
 
+from .privacy import outline_surgical_frame
 from .scenario import Scenario
 
 log = logging.getLogger("sentinel.video")
@@ -83,6 +84,7 @@ class VideoWorker:
         self._playing = threading.Event()
         self._lock = threading.Lock()
         self._latest: Optional[tuple[int, bytes]] = None
+        self._latest_privacy: Optional[tuple[int, bytes]] = None
         self._render_times: deque[float] = deque(maxlen=256)
         self._rewind_to: Optional[Scenario] = None
         self._rewind_pending = threading.Event()
@@ -123,6 +125,11 @@ class VideoWorker:
         with self._lock:
             return self._latest
 
+    def latest_privacy(self) -> Optional[tuple[int, bytes]]:
+        """Darkened copy for the screen. None until a real frame has been mirrored."""
+        with self._lock:
+            return self._latest_privacy
+
     def render_fps(self) -> Optional[float]:
         if not self._render_times:
             return None
@@ -135,7 +142,9 @@ class VideoWorker:
                 "test_pattern": self.source is None, "live_capture": self.live_capture,
                 "frame_id": self.frame_id, "source_fps": self.source_fps, "dropped_frames": self.dropped,
                 "frames_decoded": self.frames_decoded, "decode_error": self.decode_error,
-                "mean_brightness": self.mean_brightness, "black_frames": self._black_run >= BLACK_RUN_FRAMES}
+                "mean_brightness": self.mean_brightness, "black_frames": self._black_run >= BLACK_RUN_FRAMES,
+                "inference_frames": "original",
+                "privacy_mirror": "black field with white outlines on the screen only; models and agents receive the original frames"}
 
     # ---- threads ---------------------------------------------------------------
     def _open(self) -> Optional[cv2.VideoCapture]:
@@ -171,8 +180,15 @@ class VideoWorker:
             fps = cap.get(cv2.CAP_PROP_FPS)
             self.source_fps = float(fps) if fps and 1 <= fps <= 240 else DEFAULT_FPS
             start_s = scenario.video.get("start_s") if scenario else None
-            if isinstance(start_s, (int, float)):
+            env_start = os.environ.get("SENTINEL_VIDEO_START_S")
+            if env_start:
+                try:
+                    start_s = float(env_start)
+                except ValueError:
+                    pass
+            if isinstance(start_s, (int, float)) and start_s > 0:
                 cap.set(cv2.CAP_PROP_POS_MSEC, float(start_s) * 1000.0)
+                log.info("video: seek to %.1f s", start_s)
         log.info("video: %s at %.1f fps%s", path, self.source_fps, " (live)" if self.live_capture else "")
         return cap
 
@@ -261,6 +277,13 @@ class VideoWorker:
             ok, buf = cv2.imencode(".jpg", frame, params)
             if not ok:
                 continue
+            privacy_jpeg: Optional[bytes] = None
+            if self.source is not None:
+                ok_p, buf_p = cv2.imencode(".jpg", outline_surgical_frame(frame), params)
+                if ok_p:
+                    privacy_jpeg = buf_p.tobytes()
             with self._lock:
                 self._latest = (frame_id, buf.tobytes())
+                if privacy_jpeg is not None:
+                    self._latest_privacy = (frame_id, privacy_jpeg)
             self._render_times.append(time.monotonic())

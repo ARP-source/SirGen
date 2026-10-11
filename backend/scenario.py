@@ -95,6 +95,35 @@ def series_from_vitaldb(csv_path: Path, vitals_source: dict[str, Any], duration_
     return VitalsSeries(values=values, source=label, source_kind="real_time_shifted")
 
 
+def baseline_for_series(series: VitalsSeries, baseline: dict[str, Any], duration_s: int) -> dict[str, Any]:
+    """When the CSV is loaded, the fixed-rule fire time is measured on those samples.
+
+    The JSON `fires_at_t_s` stays the fallback-keyframe time so a checkout without the CSV
+    still matches the documented expectation.
+    """
+    if series.source_kind != "real_time_shifted":
+        return baseline
+    from .telemetry import BaselineRule
+
+    rule = BaselineRule()
+    fired: Optional[str] = None
+    fired_at: Optional[int] = None
+    for t in range(duration_s + 1):
+        sample = series.at(t)
+        hit = rule.step(t, sample["map"], sample["sbp"])
+        if hit:
+            fired, fired_at = hit, t
+            break
+    out = dict(baseline)
+    out["fires"] = fired
+    out["fires_at_t_s"] = fired_at
+    out["comment"] = (
+        f"Measured on the loaded VitalDB excerpt: {fired or 'no alarm'} at t {fired_at} s. "
+        "The fixed rule names no cause. The scenario file's fires_at_t_s is the fallback-keyframe time."
+    )
+    return out
+
+
 @dataclass
 class Scenario:
     id: str
@@ -156,12 +185,14 @@ def load_scenario(path: Path, data_dir: Path) -> Scenario:
     raw = json.loads(path.read_text())
     nibp = [n for n in raw["vitals"].get("nibp", [])
             if n.get("t_s") is not None and any(n.get(k) is not None for k in ("sbp", "dbp", "map"))]
+    series = build_series(raw, data_dir)
     return Scenario(
         id=raw["id"], title=raw["title"], on_screen_label=raw.get("on_screen_label", ""),
         duration_s=int(raw["duration_s"]), event_t_s=raw.get("event_t_s"),
         event_note=raw.get("event_note", ""), event_type=_event_type(raw), alert_level=_alert_level(raw),
-        series=build_series(raw, data_dir), drug_log=list(raw.get("drug_log", [])), nibp=nibp,
-        baseline=dict(raw.get("baseline_rule", {})), video=dict(raw.get("video", {})), raw=raw,
+        series=series, drug_log=list(raw.get("drug_log", [])), nibp=nibp,
+        baseline=baseline_for_series(series, raw.get("baseline_rule", {}), int(raw["duration_s"])),
+        video=dict(raw.get("video", {})), raw=raw,
     )
 
 

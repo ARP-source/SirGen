@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import time
 from typing import Any, Callable, Optional, Protocol
@@ -36,7 +37,7 @@ SENTENCE_MAX = 170
 NOTE_MAX = 90
 MAX_EVIDENCE = 4
 MAX_EVENTS = 8
-MIN_GAP_S = 6.0        # a changed scene is re-read at most this often
+MIN_GAP_S = float(os.environ.get("SENTINEL_PROCEDURE_MIN_GAP", "6"))  # demo: 4 for more attending traffic
 MAX_GAP_S = 25.0       # an unchanged scene is re-read at least this often
 WINDOW_S = 30
 MAX_TOKENS = 360

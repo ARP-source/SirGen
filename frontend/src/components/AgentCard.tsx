@@ -142,6 +142,9 @@ export default function AgentCard({
   const procThinking = cfg.id === 'procedure' && s.procedure.state === 'thinking'
   const active = slot?.state === 'thinking' || slot?.state === 'waiting' || procThinking
   const thinking = cfg.kind === 'llm' && active
+  const msg = slot?.message as { hypothesis?: string } | null | undefined
+  const procLine = cfg.id === 'procedure' && s.procedure.state === 'done' ? s.procedure.doing : null
+  const preview = (msg?.hypothesis ?? procLine)?.slice(0, 120) ?? null
   return (
     <button
       type="button"
@@ -172,6 +175,7 @@ export default function AgentCard({
         {st.numbers.length ? st.numbers.map((n, i) => <span key={i}>{n}</span>) : <span className="muted">not measured</span>}
       </div>
       <div className="ag-caption" title={st.caption}>{st.caption}</div>
+      {preview && <div className="ag-msg-preview" title={preview}>{preview}</div>}
       <div className="ag-foot">
         <div className="ag-title2">{cfg.title}</div>
         <div className="ag-sub">{cfg.subtitle}</div>

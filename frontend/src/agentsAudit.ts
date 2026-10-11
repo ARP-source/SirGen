@@ -25,7 +25,7 @@ export const AUDIT_POLL_MS = 5000
 const LIMIT = 2000
 
 /** Polls /audit/entries every AUDIT_POLL_MS while `active`; keeps the last good result when a poll fails. */
-export function useAuditEntries(active: boolean): { rows: AuditRow[]; error: string | null; loaded: boolean; fetchedAt: number | null; refresh: () => void } {
+export function useAuditEntries(active: boolean, pollMs: number = AUDIT_POLL_MS): { rows: AuditRow[]; error: string | null; loaded: boolean; fetchedAt: number | null; refresh: () => void } {
   const [rows, setRows] = useState<AuditRow[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -44,9 +44,9 @@ export function useAuditEntries(active: boolean): { rows: AuditRow[]; error: str
   useEffect(() => {
     if (!active) return
     refresh()
-    const t = window.setInterval(refresh, AUDIT_POLL_MS)
+    const t = window.setInterval(refresh, pollMs)
     return () => window.clearInterval(t)
-  }, [active, refresh])
+  }, [active, pollMs, refresh])
 
   return { rows, error, loaded, fetchedAt, refresh }
 }

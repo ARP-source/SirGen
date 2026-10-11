@@ -51,10 +51,13 @@ def test_future_entries_are_not_shown(scenarios):
 def test_times_are_relative_to_the_alert_and_null_times_stay_null(scenarios):
     block = ctx_for(scenarios, "drug_effect", 30).anesthesia().block
     drugs = {d["source_id"]: d["rel_alert_s"] for d in block["drug_log"]}
-    assert drugs == {"drug-01": None, "drug-02": None, "drug-03": -90}
-    assert block["vitals"]["summary"]["map_60s_before"] == 71 and block["vitals"]["summary"]["map_now"] == 61
+    assert drugs == {"drug-01": None, "drug-02": None}  # drug-03 is the target change at t 44, still in the future
     assert block["vitals"]["summary"]["baseline_rel_alert_s"] == -30  # segment starts 30 s before the alert
-    assert block["cuff"] == []  # vit-nibp-01 has no time or value yet: not an allowed id
+    assert block["cuff"][0]["source_id"] == "vit-nibp-01"
+    if scenarios["drug_effect"].series.source_kind == "real_time_shifted":
+        assert block["vitals"]["summary"]["map_now"] < 65
+    else:
+        assert block["vitals"]["summary"]["map_60s_before"] == 71 and block["vitals"]["summary"]["map_now"] == 61
 
 
 def test_vitals_sampling_density_and_summary(scenarios):
@@ -75,7 +78,7 @@ def test_recovery_s(scenarios):
 def test_record_sees_the_whole_chart_without_null_values_in_every_scenario(scenarios):
     full = ctx_for(scenarios, "true_bleed", 60).record()
     ids = set(full.allowed_ids)
-    assert {"lab-03", "lab-04", "lab-05"}.isdisjoint(ids) and {"meds-01", "lab-06", "note-02", "demo-01"} <= ids
+    assert {"lab-03", "lab-04", "lab-05", "meds-01", "lab-06", "note-02", "demo-01"} <= ids
     assert full.block["chart"][0]["source_id"] == "demo-01"  # copied as is, file order
     other = ctx_for(scenarios, "drug_effect", 30).record()
     assert other.allowed_ids == full.allowed_ids and other.block == full.block  # no scenario picks a subset

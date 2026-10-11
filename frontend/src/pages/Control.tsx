@@ -57,6 +57,12 @@ export default function Control() {
         </div>
       )}
 
+      <div className="control-demo-hint">
+        <b>Judge demo</b> · Restart → Play · <code>/surgical</code> fullscreen on tower monitor · <code>/agents</code> open.
+        Event ~t {fmt(s?.scenario.event_t_s ?? 60)} s or <b>Trigger alert</b>. If speech is held, <b>Surgeon asks</b> once.
+        Full script: <code>docs/DEMO-SCRIPT.md</code>
+      </div>
+
       <h2 style={{ fontSize: 18 }} className="muted">Scenario</h2>
       <div className="scenarios">
         {scenarios.map((sc) => (

@@ -28,11 +28,14 @@ def test_series_is_1hz_and_hits_keyframes():
     assert s.at(0)["map"] == 70 and s.at(10)["map"] == 80 and s.at(3)["map"] == 73
 
 
-def test_drug_effect_uses_labelled_fallback_without_csv(data_dir):
-    sc = load_scenario(data_dir / "scenarios" / "drug_effect.json", data_dir)
+def test_drug_effect_uses_labelled_fallback_without_csv(tmp_path, data_dir):
+    (tmp_path / "scenarios").mkdir()
+    shutil.copy(data_dir / "scenarios" / "drug_effect.json", tmp_path / "scenarios")
+    sc = load_scenario(tmp_path / "scenarios" / "drug_effect.json", tmp_path)
     assert sc.series.source_kind == "approximate"
     assert "approximate" in sc.series.source
     assert sc.series.at(30)["map"] == 61
+    assert sc.baseline["fires_at_t_s"] == 81
 
 
 def test_drug_effect_uses_vitaldb_csv_when_present(tmp_path, data_dir):
@@ -45,9 +48,10 @@ def test_drug_effect_uses_vitaldb_csv_when_present(tmp_path, data_dir):
     sc = load_scenario(tmp_path / "scenarios" / "drug_effect.json", tmp_path)
     assert sc.series.source_kind == "real_time_shifted"
     assert "time-shifted" in sc.series.source
-    # window start 360 (excerpt not chosen yet) -> t_s 0 is real time_s 360
-    assert sc.series.at(0)["map"] == pytest.approx(60)
-    assert sc.series.at(10)["map"] == pytest.approx(70)
+    # excerpt_real_start_s 400 -> t_s 0 is real time_s 400; the fixture's ART_MBP is time_s - 300
+    assert sc.series.at(0)["map"] == pytest.approx(100)
+    assert sc.series.at(10)["map"] == pytest.approx(110)
+    assert sc.baseline["fires_at_t_s"] is not None
 
 
 def test_event_type_and_alert_level(scenarios):
@@ -58,5 +62,5 @@ def test_event_type_and_alert_level(scenarios):
 
 
 def test_null_nibp_entries_are_dropped(scenarios):
-    assert scenarios["drug_effect"].nibp == []
+    assert [n["source_id"] for n in scenarios["drug_effect"].nibp] == ["vit-nibp-01", "vit-nibp-02"]
     assert [n["source_id"] for n in scenarios["artifact"].nibp] == ["vit-nibp-01", "vit-nibp-02"]

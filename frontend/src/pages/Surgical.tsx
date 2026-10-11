@@ -5,43 +5,20 @@ import { useSentinelState } from '../api'
 const n = (v: number | null | undefined) => (v == null ? '--' : String(Math.round(v)))
 
 /**
- * Screen 1: the surgeon's HUD. One colour (dim white). It shows the patient's vitals, the step the
- * video models see and the usual next step, the procedure agent's one-line reading of the scene, and,
- * once the speak-or-hold gate has released it, what the assistant says. Everything fades to about 30%
- * while a hold instrument is in use. Two things never fade: an emergency by the gate's thresholds
- * (MAP < 55 or SpO2 < 90) and the caution glow, which marks a cutting or energy instrument detected
- * close to the detected cystic duct or artery (an AI estimate, labelled so).
+ * Screen 1: surgeon HUD. Video stays clear; proximity caution is text on the side only (no field overlay).
+ * Emergency and released speech use the existing banners.
  */
 export default function Surgical() {
   const { state, link } = useSentinelState()
   const spokenId = useRef<string | null>(null)
-  const img = useRef<HTMLImageElement>(null)
-  const [frameBox, setFrameBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
   const params = new URLSearchParams(window.location.search)
-  const voice = params.get('voice') !== '0' // offline TTS on the box, browser voice as fallback
-  const boxes = params.get('boxes') === '1' // debug only; never on by default
+  const voice = params.get('voice') !== '0'
+  const boxes = params.get('boxes') === '1'
+  const [outline, setOutline] = useState(() => params.get('raw') !== '1')
+  const [aiSight, setAiSight] = useState(boxes)
 
   useEffect(() => {
     document.title = 'Sentinel-OR · Surgical view'
-  }, [])
-
-  // Where the video frame actually sits inside the letterboxed <img> (object-fit: contain).
-  useEffect(() => {
-    const measure = () => {
-      const el = img.current
-      if (!el || !el.naturalWidth || !el.naturalHeight) return
-      const scale = Math.min(el.clientWidth / el.naturalWidth, el.clientHeight / el.naturalHeight)
-      const w = el.naturalWidth * scale
-      const h = el.naturalHeight * scale
-      setFrameBox({ x: (el.clientWidth - w) / 2, y: (el.clientHeight - h) / 2, w, h })
-    }
-    measure()
-    const id = window.setInterval(measure, 1000)
-    window.addEventListener('resize', measure)
-    return () => {
-      window.clearInterval(id)
-      window.removeEventListener('resize', measure)
-    }
   }, [])
 
   const cur = state?.speech.current ?? null
@@ -89,25 +66,25 @@ export default function Surgical() {
   const next = live ? scene?.step.next_display ?? null : null
   const reading = proc?.state === 'done' && proc.doing ? proc : null
   const caution = live ? scene?.caution ?? null : null
-  const glow =
-    caution && frameBox
-      ? {
-          left: frameBox.x + caution.box[0] * frameBox.w - 14,
-          top: frameBox.y + caution.box[1] * frameBox.h - 14,
-          width: (caution.box[2] - caution.box[0]) * frameBox.w + 28,
-          height: (caution.box[3] - caution.box[1]) * frameBox.h + 28,
-        }
-      : null
+  const procConcern = reading?.concern ?? null
+  /** Side rail: attending concern, vitals event, or proximity estimate — never a box on the field. */
+  const sideIssue = emergency
+    ? null
+    : procConcern
+      ? { kind: 'concern', text: procConcern }
+      : ev
+        ? { kind: 'alert', text: ev.alert_text ?? 'Vitals event — see detail on screen 2' }
+        : caution
+          ? { kind: 'caution', text: caution.label }
+          : null
 
   return (
-    <div className={`surgical ${holding ? 'holding' : 'clear'} ${emergency ? 'emergency' : ''}`}>
-      <img ref={img} className="field" src={boxes ? '/video.mjpg?boxes=1' : '/video.mjpg?boxes=0'} alt="Laparoscopic video (MJPEG stream)" />
-
-      {glow && caution && (
-        <div className={`hud-caution ${caution.kind}`} style={glow} aria-label={caution.label}>
-          <span className="caution-label">{caution.label}</span>
-        </div>
-      )}
+    <div className={`surgical ${holding ? 'holding' : 'clear'} ${emergency ? 'emergency' : ''} ${aiSight ? 'ai-sight' : ''}`}>
+      <img
+        className="field"
+        src={`/video.mjpg?boxes=${aiSight ? 1 : 0}&privacy=${aiSight ? 0 : outline ? 1 : 0}`}
+        alt={aiSight ? 'Laparoscopic video with detection boxes' : 'Laparoscopic video (MJPEG stream)'}
+      />
 
       <div className="hud">
         <div className="hud-left">
@@ -131,6 +108,41 @@ export default function Surgical() {
           <span><i>SpO2</i>{n(v?.spo2)}</span>
         </div>
       </div>
+
+      {aiSight && (
+        <aside className="hud-cvs" aria-label="Critical View of Safety classifier">
+          <div className="hud-side-k">Critical View classifier</div>
+          {live && scene?.cvs_available && scene.cvs.length ? (
+            <ul>
+              {scene.cvs.map((c) => (
+                <li key={c.name}>
+                  <div className="row">
+                    <span className={c.met ? 'met' : 'off'}>{c.met ? 'met' : 'not met'}</span>
+                    <span className="mono">
+                      {c.p == null ? 'p --' : `p ${c.p.toFixed(2)}`}
+                      {c.threshold != null ? ` / ${c.threshold.toFixed(2)}` : ''}
+                    </span>
+                  </div>
+                  <p>{c.text}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>{live ? 'classifier not reporting' : 'waiting for the vision models'}</p>
+          )}
+          <small>Classifier read only. Not a clinical call.</small>
+        </aside>
+      )}
+
+      {sideIssue && (
+        <aside className={`hud-side kind-${sideIssue.kind}`} aria-live="polite">
+          <div className="hud-side-k">
+            {sideIssue.kind === 'concern' ? 'Attending' : sideIssue.kind === 'alert' ? 'Alert' : 'Vision estimate'}
+          </div>
+          <p>{sideIssue.text}</p>
+          {sideIssue.kind === 'caution' && <small>AI proximity estimate · not drawn on the field</small>}
+        </aside>
+      )}
 
       {reading && !emergency && (
         <div className="hud-reading" aria-label="Procedure agent reading">
@@ -161,12 +173,34 @@ export default function Surgical() {
       )}
       {link !== 'live' && <div className="hud-fault">state link {link}</div>}
 
-      <Link to="/agents" className="hud-swarm-link">Swarm agents</Link>
+      <div className="hud-screen-links">
+        <button
+          type="button"
+          className={`hud-swarm-link${aiSight ? ' on' : ''}`}
+          onClick={() => setAiSight((on) => {
+            if (on) setOutline(true)
+            return !on
+          })}
+        >
+          {aiSight ? 'Surgeon sight' : 'AI sight'}
+        </button>
+        {!aiSight && (
+          <button type="button" className="hud-swarm-link" onClick={() => setOutline((v) => !v)}>
+            {outline ? 'Original view' : 'Outline view'}
+          </button>
+        )}
+        <Link to="/agents" className="hud-swarm-link">Swarm agents</Link>
+      </div>
 
       <div className="hud-foot">
         {state?.labels.footage ?? 'Recorded footage · Research prototype'}
         {vitalsNote ? ` · ${vitalsNote}` : ''}
-        {live ? ' · step from an instrument heuristic · caution glow is an AI estimate' : ''}
+        {live ? ' · step from instrument heuristic' : ''}
+        {aiSight
+          ? ' · AI sight: boxes, names, and the Critical View classifier; the surgeon view shows none of them'
+          : outline
+            ? ' · outline view is display only; models see the original frames'
+            : ''}
         {' · '}
         {state?.labels.attribution ??
           'Video: Cholec80, CAMMA (CC BY-NC-SA 4.0). Vitals: VitalDB case 59, Lee HC et al., Sci Data 2022 (CC BY 4.0).'}
