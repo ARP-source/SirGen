@@ -28,7 +28,7 @@ from ..scene import LiveScene, SceneEvent
 from ..state import AgentSlot, ProcedureView, StateStore
 from .evidence import compact
 from .llm_client import LightningClient, LLMBadResponse, LLMError, LLMTimeout, LLMUnreachable
-from .schemas import BANNED_PATTERNS, is_one_sentence
+from .schemas import BANNED_PATTERNS, is_one_sentence, trim_at_word
 
 log = logging.getLogger("sentinel.procedure")
 
@@ -83,11 +83,12 @@ class Reading:
     """A validated model output."""
 
     def __init__(self, obj: dict[str, Any]) -> None:
-        self.doing: str = obj["doing"].strip()
-        self.intent: str = obj["intent"].strip()
+        cut = lambda s: trim_at_word(s.strip(), SENTENCE_MAX)  # noqa: E731  (a sentence stopped by the length cap)
+        self.doing: str = cut(obj["doing"])
+        self.intent: str = cut(obj["intent"])
         self.next: str = obj["next"]
-        self.watch: str = obj["watch"].strip()
-        self.concern: Optional[str] = obj["concern"].strip() if obj.get("concern") else None
+        self.watch: str = cut(obj["watch"])
+        self.concern: Optional[str] = cut(obj["concern"]) if obj.get("concern") else None
         self.confidence: str = obj["confidence"]
         self.evidence: list[dict[str, str]] = [{"source_id": e["source_id"], "note": e["note"]} for e in obj["evidence"]]
 

@@ -19,7 +19,7 @@ Write:
 
 Rules:
 - Use only what is in the evidence. Do not add structures, instruments, times or numbers that are not there. A number in your text must appear in the evidence.
-- One sentence per field, plain words, no lists, under 170 characters each.
+- One short sentence per field, plain words, no lists, at most about 20 words (the hard cap is 170 characters; a sentence that hits it is cut).
 - Observations from the video models are estimates; write "on video", "the detector shows", "the classifier sees". Never state what the patient has. No diagnosis, no treatment or medication advice, no risk percentages, no "should", "must", "recommend".
 - If the detector is stale or nothing is in view, say so in "doing" and set confidence low.
 Return only the JSON object the schema asks for.
