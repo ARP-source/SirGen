@@ -45,22 +45,22 @@ button { font: inherit; }
 
 /* ---- surgical view: the surgeon's HUD. One colour (dim white), nothing drawn on the field. ---- */
 .surgical { position: fixed; inset: 0; background: #000; overflow: hidden; color: #fff;
-  --hud: rgba(255, 255, 255, 0.45); --hud-faint: rgba(255, 255, 255, 0.3); }
+  --hud: rgba(255, 255, 255, 0.72); --hud-faint: rgba(255, 255, 255, 0.5); }
 .surgical img.field { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .surgical .hud, .surgical .hud-issue, .surgical .hud-foot { transition: opacity 0.6s ease; pointer-events: none;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7); font-weight: 300; }
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 2px rgba(0, 0, 0, 0.6); font-weight: 400; }
 .surgical .hud { position: absolute; top: 14px; left: 20px; right: 20px; display: flex; justify-content: space-between;
   align-items: baseline; gap: 16px; color: var(--hud); }
-.surgical .hud-status { font-size: 17px; letter-spacing: 0.02em; }
-.surgical .hud-status .sub { color: var(--hud-faint); font-size: 14px; }
-.surgical .hud-vitals { display: flex; gap: 20px; font-size: 17px; font-variant-numeric: tabular-nums; }
-.surgical .hud-vitals i { font-style: normal; font-size: 11px; letter-spacing: 0.08em; margin-right: 5px; color: var(--hud-faint); }
+.surgical .hud-status { font-size: 22px; letter-spacing: 0.02em; }
+.surgical .hud-status .sub { color: var(--hud-faint); font-size: 17px; }
+.surgical .hud-vitals { display: flex; gap: 24px; font-size: 24px; font-variant-numeric: tabular-nums; }
+.surgical .hud-vitals i { font-style: normal; font-size: 13px; letter-spacing: 0.08em; margin-right: 5px; color: var(--hud-faint); }
 .surgical .hud-issue { position: absolute; left: 50%; transform: translateX(-50%); bottom: 44px; max-width: 70%;
-  text-align: center; color: var(--hud); font-size: 17px; line-height: 1.35; }
-.surgical .hud-issue .outcome { font-size: 14px; color: var(--hud-faint); margin-bottom: 2px; }
-.surgical .hud-foot { position: absolute; bottom: 4px; left: 20px; right: 20px; font-size: 10px; color: rgba(255, 255, 255, 0.28);
+  text-align: center; color: var(--hud); font-size: 22px; line-height: 1.35; }
+.surgical .hud-issue .outcome { font-size: 17px; color: var(--hud-faint); margin-bottom: 2px; }
+.surgical .hud-foot { position: absolute; bottom: 4px; left: 20px; right: 20px; font-size: 11px; color: rgba(255, 255, 255, 0.4);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.surgical.holding .hud, .surgical.holding .hud-issue, .surgical.holding .hud-foot { opacity: 0.1; }
+.surgical.holding .hud, .surgical.holding .hud-issue, .surgical.holding .hud-foot { opacity: 0.3; }
 /* The one full-strength element: an emergency by the gate's thresholds. It is never faded. */
 .surgical.emergency .hud { opacity: 1; color: #fff; }
 .surgical .hud-emergency { position: absolute; top: 52px; left: 50%; transform: translateX(-50%); max-width: 80%;

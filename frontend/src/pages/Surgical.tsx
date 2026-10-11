@@ -7,7 +7,7 @@ const n = (v: number | null | undefined) => (v == null ? '--' : String(Math.roun
  * Screen 1: the surgeon's HUD. Nothing is drawn on the field: no boxes, tool names, anatomy or
  * classifier remarks. One colour (dim white). It shows the patient's vitals, a short status, and,
  * once the speak-or-hold gate has released it, the agents' outcome and the code-built question.
- * Everything fades to about 10% while a hold instrument is in use. The only full-strength element
+ * Everything fades to about 30% while a hold instrument is in use. The only full-strength element
  * is an emergency by the gate's thresholds (MAP < 55 or SpO2 < 90).
  */
 export default function Surgical() {
@@ -58,12 +58,12 @@ export default function Surgical() {
           {ev && !emergency && <span className="sub"> · see screen 2</span>}
           {pending && <span className="sub"> · assessing</span>}
         </div>
-        {v && (
+        {(
           <div className="hud-vitals" aria-label="Patient vitals">
-            <span><i>HR</i>{n(v.hr)}</span>
-            <span><i>BP</i>{n(v.sbp)}/{n(v.dbp)}</span>
-            <span><i>MAP</i>{n(v.map)}</span>
-            <span><i>SpO2</i>{n(v.spo2)}</span>
+            <span><i>HR</i>{n(v?.hr)}</span>
+            <span><i>BP</i>{n(v?.sbp)}/{n(v?.dbp)}</span>
+            <span><i>MAP</i>{n(v?.map)}</span>
+            <span><i>SpO2</i>{n(v?.spo2)}</span>
           </div>
         )}
       </div>
