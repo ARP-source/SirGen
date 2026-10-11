@@ -40,7 +40,11 @@ export default function PostOp() {
         {s ? <>Log: {s.audit.entries} entries · chain {s.audit.verified === null ? 'not checked yet' : s.audit.verified ? 'verified' : 'BROKEN'}</> : null}
         {summary && (
           <> · report covers run {summary.run}, entries {summary.covers_entries[0]} to {summary.covers_entries[1]} · summary {summary.narrative}
-            {summary.narrative_ms ? ` in ${(summary.narrative_ms / 1000).toFixed(1)} s` : ''}</>
+            {summary.narrative_ms ? ` in ${(summary.narrative_ms / 1000).toFixed(1)} s` : ''}
+            {summary.video_events != null && ` · ${summary.video_events} video events`}
+            {summary.review_items != null && ` · ${summary.review_items} items to review`}
+            {summary.medications_to_decide != null && ` · ${summary.medications_to_decide} medications to decide`}
+            {summary.codes && summary.codes.length > 0 && ` · draft codes ${summary.codes.join(', ')}`}</>
         )}
       </div>
       {err && <div className="err">{err}</div>}

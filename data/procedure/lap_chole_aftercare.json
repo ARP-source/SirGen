@@ -1,0 +1,33 @@
+{
+  "schema_version": "1",
+  "label": "General aftercare teaching after laparoscopic cholecystectomy and medication-reconciliation prompts. Reference material for the discharging team, not patient-specific orders. Sentinel never decides a dose, a restart or a stop.",
+  "sources": [
+    "SAGES patient information: Laparoscopic gallbladder removal (cholecystectomy).",
+    "American College of Surgeons patient education: Cholecystectomy, surgical removal of the gallbladder.",
+    "ERAS Society guidelines for perioperative care (general principles of early feeding and mobilisation)."
+  ],
+  "general": [
+    {"id": "ac-01", "topic": "Activity", "text": "Walking from the day of surgery is usual; heavy lifting is usually limited for a few weeks, as the surgeon advises."},
+    {"id": "ac-02", "topic": "Diet", "text": "Most patients return to a normal diet as tolerated; some find smaller, lower-fat meals easier at first."},
+    {"id": "ac-03", "topic": "Wounds", "text": "Small port-site incisions are kept clean and dry as instructed; dressings and showering follow the discharge sheet."},
+    {"id": "ac-04", "topic": "Pain", "text": "Port-site and shoulder-tip pain from the gas used in laparoscopy are common in the first days."},
+    {"id": "ac-05", "topic": "Follow-up", "text": "A follow-up visit or call with the surgical team is usually arranged in the first weeks."},
+    {"id": "ac-06", "topic": "When to call", "text": "Patients are usually told to report fever, yellowing of the skin or eyes, worsening abdominal pain or swelling, persistent vomiting, or redness or discharge at a wound."}
+  ],
+  "medication_groups": {
+    "anticoagulant": {"match": ["apixaban", "rivaroxaban", "edoxaban", "dabigatran", "warfarin", "anticoagulant", "factor xa"],
+                      "decision": "Restart timing of the anticoagulant, and any bridging, for the surgical team to decide."},
+    "antiplatelet": {"match": ["aspirin", "clopidogrel", "ticagrelor", "prasugrel", "antiplatelet"],
+                     "decision": "Restart timing of the antiplatelet for the surgical team to decide."},
+    "antihypertensive": {"match": ["losartan", "valsartan", "lisinopril", "amlodipine", "metoprolol", "angiotensin", "beta blocker", "ace inhibitor"],
+                         "decision": "Whether and when to resume the blood-pressure medicine, for the discharging team to decide."},
+    "statin": {"match": ["atorvastatin", "simvastatin", "rosuvastatin", "pravastatin", "statin"],
+               "decision": "Whether to resume the home statin, for the discharging team to decide."},
+    "antibiotic": {"match": ["piperacillin", "tazobactam", "ceftriaxone", "cefazolin", "metronidazole", "amoxicillin", "antibiotic"],
+                   "decision": "Whether antibiotics continue after surgery and for how long, for the surgical team to decide."},
+    "diabetes": {"match": ["metformin", "insulin", "glipizide", "sglt2", "empagliflozin"],
+                 "decision": "Diabetes medicine plan around eating again, for the discharging team to decide."}
+  },
+  "default_decision": "Resume, change or stop: for the discharging team to decide.",
+  "allergy_prompt": "Recorded allergy or intolerance to keep in view when prescribing pain relief and other discharge medicines."
+}

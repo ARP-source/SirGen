@@ -28,6 +28,7 @@ VISION_URL = os.environ.get("SENTINEL_VISION_URL", "http://127.0.0.1:8004")
 TIMEOUT_S = float(os.environ.get("SENTINEL_VISION_TIMEOUT_S", "3"))
 SEND_WIDTH = 854
 RETRY_S = 2.0
+MAX_FPS = float(os.environ.get("SENTINEL_VISION_MAX_FPS", "12"))  # leaves GPU time for the agents' LLM
 TOOL_COLOR = (80, 200, 255)
 ANATOMY_COLORS = {"cystic_duct": (60, 220, 60), "cystic_artery": (60, 60, 240), "calot_triangle": (230, 200, 40),
                   "cystic_plate": (200, 120, 230), "gallbladder": (40, 160, 200), "tool": (150, 150, 150)}
@@ -124,6 +125,7 @@ class VisionClient:
                         break
                     frame_id, frame = self._slot  # type: ignore[misc]
                 self._sent_id = frame_id
+                started = time.monotonic()
                 scale = 1.0
                 small = frame
                 if frame.shape[1] > SEND_WIDTH:
@@ -146,3 +148,5 @@ class VisionClient:
                 if ok:
                     with self._lock:
                         self._annotated = (frame_id, jpg.tobytes())
+                if MAX_FPS > 0:
+                    self._stop.wait(max(0.0, 1.0 / MAX_FPS - (time.monotonic() - started)))

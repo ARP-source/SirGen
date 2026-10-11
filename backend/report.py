@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from .aftercare import Aftercare, Coding, build_aftercare, build_coding
 from .agents.evidence import flatten_chart
 from .agents.llm_client import LightningClient, LLMBadResponse, LLMError, LLMTimeout, LLMUnreachable
 from .agents.schemas import BANNED_PATTERNS
@@ -33,6 +34,7 @@ from .audit import AuditLog, Verification
 from .state import ATTRIBUTION, COMPOSITE_LABEL, CONTEXT_UNAVAILABLE
 
 log = logging.getLogger("sentinel.report")
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 NARRATIVE_UNAVAILABLE = "Narrative unavailable. The sections below are complete and come straight from the log."
 MAX_SENTENCES = 5
@@ -79,6 +81,7 @@ class Facts:
     baseline: list[dict[str, Any]] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
     voice: list[dict[str, Any]] = field(default_factory=list)
+    video: list[dict[str, Any]] = field(default_factory=list)
     ended: Optional[dict[str, Any]] = None
     cited_chart_ids: list[str] = field(default_factory=list)
 
@@ -124,6 +127,8 @@ def extract_facts(entries: list[dict[str, Any]], run: Optional[int] = None) -> F
             unavailable.setdefault(d.get("event_id", ""), []).append(e)
         elif k == "deliberation_result":
             results[d.get("event_id", "")] = e
+        elif k in ("video_event", "deviation"):
+            f.video.append(e)
         elif k == "voice_qa":
             f.voice.append(e)
             cited += list(d.get("source_ids", []))
@@ -146,8 +151,10 @@ def fact_lines(f: Facts, chart: dict[str, dict[str, Any]]) -> dict[str, str]:
     """id -> one line of text. These are the only things the narrative may cite or quote numbers from."""
     lines: dict[str, str] = {}
     for e in f.entries:
-        if e["kind"] in ("run_start", "control", "session_start", "metrics_snapshot"):
+        if e["kind"] in ("run_start", "control", "session_start", "metrics_snapshot", "vision_status"):
             continue
+        if e["kind"] == "video_event" and e["data"].get("kind") == "tool_in":
+            continue  # instrument comings and goings stay in the table below, not in the model's input
         lines[e["id"]] = f"{t_label(e['clock_s'])} | {e['kind']} | {e['actor']} | {e['summary']}"
         if e["kind"] == "alert":
             v = e["data"].get("vitals", {})
@@ -249,6 +256,8 @@ class Report:
     narrative: Optional[list[dict[str, Any]]]
     narrative_note: str
     narrative_ms: Optional[float]
+    aftercare: Optional[Aftercare] = None
+    coding: Optional[Coding] = None
     html_text: str = ""
     sha256: str = ""
 
@@ -256,7 +265,11 @@ class Report:
         return {"run": self.run, "generated": self.generated_wall, "scenario": self.facts.scenario.get("title"),
                 "covers_entries": [self.facts.first_seq, self.facts.last_seq], "events": len(self.facts.events),
                 "narrative": "ok" if self.narrative else "unavailable", "narrative_note": self.narrative_note,
-                "narrative_ms": self.narrative_ms, "chain_ok": self.verification.ok, "sha256": self.sha256}
+                "narrative_ms": self.narrative_ms, "chain_ok": self.verification.ok, "sha256": self.sha256,
+                "video_events": len(self.facts.video),
+                "review_items": len(self.aftercare.review) if self.aftercare else None,
+                "medications_to_decide": len(self.aftercare.meds) if self.aftercare else None,
+                "codes": [c.code for c in self.coding.rows] if self.coding else []}
 
 
 def _e(x: Any) -> str:
@@ -292,7 +305,8 @@ def render_html(r: Report) -> str:
     a("<h1>Post-operative report: DRAFT</h1>")
     a(f"<div class='small'>Sentinel-OR research prototype · generated locally {_e(r.generated_wall)} · run {r.run}</div>")
     a("<div class='banner'><b>Draft for clinician review.</b> Produced on this machine from the audit log of a replayed "
-      f"scenario. {_e(COMPOSITE_LABEL)} Not a medical record. It contains no diagnosis and no treatment advice.</div>")
+      f"scenario. {_e(COMPOSITE_LABEL)} Not a medical record. It contains no diagnosis and no treatment advice; billing codes are looked up from the "
+      "diagnoses already on the chart.</div>")
 
     a("<h2>Procedure</h2>")
     a(f"<p><b>{_e(sc.get('title'))}</b><br>{_e(sc.get('on_screen_label'))}<br>"
@@ -354,6 +368,15 @@ def render_html(r: Report) -> str:
              [[_ref(e), _e(t_label(e["clock_s"])), _e(e["summary"])] for e in f.baseline],
              "The fixed rule did not fire in this run."))
 
+    a("<h2>What the video models saw</h2>")
+    a("<p class='small'>Live instrument detector, anatomy detector and Critical View of Safety classifier on this machine. "
+      "Video-model observations, not diagnoses.</p>")
+    a(_table(["Log", "Time", "Kind", "What"],
+             [[_ref(e), _e(t_label(e["clock_s"])),
+               "<span class='bad'>deviation</span>" if e["kind"] == "deviation" else _e(str(e["data"].get("kind", "")).replace("_", " ")),
+               _e(e["summary"])] for e in f.video],
+             "No video-model events were logged in this run (vision service not running or nothing seen)."))
+
     a("<h2>Medications given (drug log)</h2>")
     a(_table(["Log", "Time", "Drug", "Detail", "Chart id", "Provenance"],
              [[_ref(e), _e("running at start" if e["data"].get("t_s") is None else t_label(e["data"]["t_s"])),
@@ -381,6 +404,44 @@ def render_html(r: Report) -> str:
              [[_ref(e), _e(t_label(e["clock_s"])), _e(e["summary"]), _e(e["actor"])] for e in f.controls],
              "No controls were used."))
 
+    if r.aftercare is not None:
+        ac = r.aftercare
+        a("<h2>Aftercare (draft for the discharging team)</h2>")
+        a("<p class='small'>General teaching for laparoscopic cholecystectomy and the decisions the chart leaves open. "
+          "Not patient-specific orders: Sentinel does not decide doses, restarts or stops.</p>")
+        a("<h3 style='font-size:14px;margin:12px 0 4px'>Intra-operative items to review</h3>")
+        a(_table(["Log", "Time", "What", "Why it matters / note"],
+                 [[f"<span class='ref'>{_e(x['log_id'])}</span>", _e(t_label(x['clock_s'])), _e(x["what"]),
+                   _e(" ".join(p for p in (x["why"], x["note"]) if p))] for x in ac.review],
+                 "Nothing from the video models or the agents was flagged for review in this run."))
+        a("<h3 style='font-size:14px;margin:12px 0 4px'>Medication reconciliation</h3>")
+        a(_table(["Chart id", "Medicine", "Dose on chart", "Chart status", "Decision for the team"],
+                 [[f"<span class='ref'>{_e(m.source_id)}</span>", _e(m.drug), _e(m.dose), _e(m.chart_status), _e(m.decision)]
+                  for m in ac.meds], "No medications on the chart."))
+        if ac.allergies:
+            a("<p>" + "<br>".join(f"<span class='ref'>{_e(x['source_id'])}</span> {_e(x['text'])}. {_e(x['prompt'])}"
+                                   for x in ac.allergies) + "</p>")
+        a("<h3 style='font-size:14px;margin:12px 0 4px'>General aftercare teaching</h3>")
+        a("<ul>" + "".join(f"<li><b>{_e(g['topic'])}.</b> {_e(g['text'])}</li>" for g in ac.general) + "</ul>")
+        a("<p class='small'>Sources: " + _e("; ".join(ac.sources)) + "</p>")
+    if r.coding is not None:
+        cd = r.coding
+        a("<h2>Insurance coding (draft for a certified coder)</h2>")
+        a(f"<p class='small'>{_e(cd.label)}</p>")
+        a(_table(["Type", "Code", "Description", "From chart", "Note"],
+                 [[_e(c.kind), f"<b>{_e(c.code)}</b>", _e(c.description),
+                   " ".join(f"<span class='ref'>{_e(i)}</span>" for i in c.from_ids), _e(c.note)] for c in cd.rows],
+                 "No codes could be matched from the chart."))
+        if cd.times:
+            parts = []
+            if "surgery_min" in cd.times:
+                parts.append(f"surgery {cd.times['surgery_min']} min")
+            if "case_min" in cd.times:
+                parts.append(f"case {cd.times['case_min']} min")
+            a(f"<p>Times from <span class='ref'>{_e(cd.times['source_id'])}</span>: {_e(', '.join(parts))}.</p>")
+        if cd.missing:
+            a("<p><b>Not in the chart, needed before a claim:</b> " + _e(", ".join(cd.missing)) + ".</p>")
+
     a("<h2>Log integrity</h2>")
     status = ("<span class='ok'>chain verified</span>" if v.ok else f"<span class='bad'>CHAIN BROKEN: {_e(v.reason)}</span>")
     a(f"<p>{status}. This report covers log entries {f.first_seq} to {f.last_seq} (run {r.run}); the log held "
@@ -392,8 +453,13 @@ def render_html(r: Report) -> str:
     return "".join(out)
 
 
+def _load(path: Path) -> Optional[dict[str, Any]]:
+    return json.loads(path.read_text()) if path.is_file() else None
+
+
 async def generate(audit: AuditLog, client: LightningClient, patient: dict[str, Any], system_prompt: str,
-                   run: Optional[int] = None, out_dir: Optional[Path] = None) -> Report:
+                   run: Optional[int] = None, out_dir: Optional[Path] = None,
+                   data_dir: Optional[Path] = None) -> Report:
     """Verify the chain, build the report for `run` (default: the latest), write it and log it."""
     verification = audit.verify()
     entries = audit.entries()
@@ -403,6 +469,12 @@ async def generate(audit: AuditLog, client: LightningClient, patient: dict[str, 
     sentences, note, ms = await write_narrative(client, system_prompt, facts, lines)
     report = Report(run=facts.run, generated_wall=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"), facts=facts, chart=chart,
                     verification=verification, narrative=sentences, narrative_note=note, narrative_ms=ms)
+    ddir = data_dir or DATA_DIR
+    ac_ref, cmap = _load(ddir / "procedure" / "lap_chole_aftercare.json"), _load(ddir / "billing" / "coding_map.json")
+    if ac_ref is not None:
+        report.aftercare = build_aftercare(patient, ac_ref, facts.entries)
+    if cmap is not None:
+        report.coding = build_coding(patient, cmap)
     report.html_text = render_html(report)
     report.sha256 = hashlib.sha256(report.html_text.encode("utf-8")).hexdigest()
     if out_dir is not None:

@@ -150,6 +150,10 @@ export interface ReportSummary {
   narrative_ms: number | null
   chain_ok: boolean
   sha256: string
+  video_events?: number
+  review_items?: number | null
+  medications_to_decide?: number | null
+  codes?: string[]
 }
 
 export interface SentinelState {

@@ -1,0 +1,31 @@
+{
+  "schema_version": "1",
+  "label": "Fixed lookup table from chart wording to billing codes, for a DRAFT that a certified coder must confirm. Code descriptions are from the public CPT and ICD-10-CM code sets; check them against the current year's edition and the payer's rules before any claim.",
+  "procedures": [
+    {"match_all": ["cholecystectomy", "laparoscopic", "cholangiograph"], "cpt": "47563", "description": "Laparoscopy, surgical; cholecystectomy with cholangiography"},
+    {"match_all": ["cholecystectomy", "laparoscopic", "common duct"], "cpt": "47564", "description": "Laparoscopy, surgical; cholecystectomy with exploration of common duct"},
+    {"match_all": ["cholecystectomy", "laparoscopic"], "cpt": "47562", "description": "Laparoscopy, surgical; cholecystectomy"},
+    {"match_all": ["cholecystectomy", "videoscopic"], "cpt": "47562", "description": "Laparoscopy, surgical; cholecystectomy"},
+    {"match_all": ["cholecystectomy"], "cpt": "47600", "description": "Cholecystectomy (open)"}
+  ],
+  "anesthesia": [
+    {"match_all": ["cholecystectomy"], "cpt": "00790", "description": "Anesthesia for intraperitoneal procedures in upper abdomen including laparoscopy; not otherwise specified"}
+  ],
+  "asa_modifier": {"1": "P1", "2": "P2", "3": "P3", "4": "P4", "5": "P5", "6": "P6"},
+  "diagnoses": [
+    {"match_all": ["acute cholecystitis"], "with_history": ["gallstone"], "primary_only": true, "icd10": "K80.00", "description": "Calculus of gallbladder with acute cholecystitis without obstruction",
+     "note": "Chart also records gallstones; coder to confirm the calculous code over K81.0."},
+    {"match_all": ["acute cholecystitis"], "primary_only": true, "icd10": "K81.0", "description": "Acute cholecystitis"},
+    {"match_all": ["chronic cholecystitis"], "primary_only": true, "icd10": "K81.1", "description": "Chronic cholecystitis"},
+    {"match_all": ["biliary colic"], "primary_only": true, "icd10": "K80.20", "description": "Calculus of gallbladder without cholecystitis without obstruction"},
+    {"match_all": ["paroxysmal atrial fibrillation"], "icd10": "I48.0", "description": "Paroxysmal atrial fibrillation"},
+    {"match_all": ["essential hypertension"], "icd10": "I10", "description": "Essential (primary) hypertension"},
+    {"match_all": ["hyperlipidaemia"], "icd10": "E78.5", "description": "Hyperlipidemia, unspecified"},
+    {"match_all": ["hyperlipidemia"], "icd10": "E78.5", "description": "Hyperlipidemia, unspecified"},
+    {"match_all": ["former smoker"], "icd10": "Z87.891", "description": "Personal history of nicotine dependence"}
+  ],
+  "medication_status": [
+    {"match_any": ["apixaban", "rivaroxaban", "edoxaban", "dabigatran", "warfarin"], "icd10": "Z79.01", "description": "Long term (current) use of anticoagulants"}
+  ],
+  "claim_fields": ["payer and member id", "rendering surgeon NPI", "anesthesia provider NPI", "date of service", "place of service", "signed operative note"]
+}
