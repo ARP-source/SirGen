@@ -9,6 +9,8 @@ from backend.agents.evidence import EvidenceContext
 from backend.agents.schemas import AgentMessage
 from backend.state import Event
 
+from .scripted_video import ScriptedScene
+
 DATA = Path(__file__).resolve().parents[2] / "data"
 
 
@@ -68,8 +70,11 @@ def test_evidence_ids_round_robin_skip_duplicates_max_three():
 def make_ctx(scenario_id, scenarios, now):
     sc = scenarios[scenario_id]
     ev = Event(event_id="ev-1", event_type=sc.event_type, event_timestamp=sc.event_t_s, trigger="scenario", simulated=True)
-    return EvidenceContext(sc, ev, now, json.loads((DATA / "patient/patient_record.json").read_text()),
-                           json.loads((DATA / "procedure/phase_rules.json").read_text()))
+    phase = json.loads((DATA / "procedure/phase_rules.json").read_text())
+    scene = ScriptedScene(sc, phase)
+    return EvidenceContext(sc, ev, now, json.loads((DATA / "patient/patient_record.json").read_text()), phase,
+                           phase_state=scene.phase_state(now), scene=scene.view(),
+                           video_events=scene.visible_events(now))
 
 
 def test_template_true_bleed_matches_documented_example(scenarios):

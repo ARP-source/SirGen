@@ -48,10 +48,6 @@
     {"source_id": "drug-02", "t_s": null, "drug": "remifentanil", "detail": "TCI running (Orchestra RFTN20); effect-site about 4.5 ng/mL", "provenance": "real: VitalDB case 59 tracks (approximate from notes; fill from RFTN20_CE/CT/RATE)"},
     {"source_id": "drug-03", "t_s": -60, "drug": "propofol", "detail": "TCI target increased (rate increase)", "provenance": "synthetic placeholder: replace with a real PPF20_CT/RATE change from the fetch script output if one precedes the excerpt; otherwise delete and reword to 'propofol and remifentanil running since induction'"}
   ],
-  "instrument_timeline": [
-    {"t_s": 0,  "tools": ["Grasper", "Hook"]},
-    {"t_s": 46, "tools": ["Grasper"]}
-  ],
   "surgical_events": [
     {"source_id": "surg-01", "t_s": 0, "event": "Grasper and hook in view; steady dissection, no new instrument for the whole segment", "tools": ["Grasper", "Hook"], "provenance": "real footage; detector output"}
   ],

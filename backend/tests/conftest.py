@@ -31,6 +31,7 @@ from backend.state import StateStore  # noqa: E402
 from backend.telemetry import ScenarioPlayer  # noqa: E402
 
 from .fake_llm import FakeLLM  # noqa: E402
+from .scripted_video import ScriptedScene  # noqa: E402
 
 
 @dataclass
@@ -40,11 +41,14 @@ class Stack:
     orch: Orchestrator
     fake: FakeLLM
     client: LightningClient
+    scene: Optional[ScriptedScene] = None
 
     def fire(self, at: Optional[float] = None) -> None:
         """Advance the scenario clock to its event so the scheduled alert fires (paused clock, no real time)."""
         ev_t = self.player.scenario.event_t_s if at is None else at
         self.player.clock = float(ev_t)
+        if self.scene is not None:
+            self.store.update(phase=self.scene.phase_state(float(ev_t)), scene=self.scene.view())
         self.player.tick(0.0)
 
     @property
@@ -53,7 +57,7 @@ class Stack:
 
 
 def make_stack(scenarios: dict, scenario_id: str, *, timeout_s: float = 5.0, delay_s: float = 0.0,
-               fake: Optional[FakeLLM] = None, **orch_kwargs: Any) -> Stack:
+               fake: Optional[FakeLLM] = None, scripted_video: bool = True, **orch_kwargs: Any) -> Stack:
     """Must be called inside a running event loop (the client and orchestrator create loop objects)."""
     fake = fake or FakeLLM(scenario_id)
     fake.configure(scenario_id=scenario_id, delay_s=delay_s)
@@ -64,9 +68,10 @@ def make_stack(scenarios: dict, scenario_id: str, *, timeout_s: float = 5.0, del
     patient = json.loads((DATA / "patient" / "patient_record.json").read_text())
     phase_json = json.loads((DATA / "procedure" / "phase_rules.json").read_text())
     orch_kwargs.setdefault("poll_s", 0.01)
-    orch = Orchestrator(store, player, patient, phase_json, client=client, **orch_kwargs)
+    scene = ScriptedScene(scenarios[scenario_id], phase_json) if scripted_video else None
+    orch = Orchestrator(store, player, patient, phase_json, client=client, scene=scene, **orch_kwargs)
     player.listener = orch
-    return Stack(store, player, orch, fake, client)
+    return Stack(store, player, orch, fake, client, scene)
 
 
 @pytest.fixture(autouse=True)

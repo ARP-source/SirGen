@@ -258,6 +258,44 @@ export interface SentinelState {
     held_s: number | null
     release_reason: string | null
   }
+  scene: SceneView
+}
+
+export interface SceneEvent {
+  source_id: string
+  t_s: number
+  kind: 'tool_in' | 'anatomy' | 'step' | 'cvs' | 'deviation' | 'observation' | 'first_cut' | string
+  text: string
+  tools: string[]
+  data: Record<string, unknown>
+}
+
+export interface SceneView {
+  status: 'live' | 'stale' | 'unavailable' | 'not running' | string
+  note: string
+  detector_ms: number | null
+  detector_fps: number | null
+  last_frame_id: number | null
+  tools: string[]
+  anatomy: string[]
+  cvs: Array<{ name: string; text: string; p: number | null; threshold: number | null; met: boolean }>
+  cvs_available: boolean
+  cvs_achieved: boolean
+  cvs_seen_at_s: number | null
+  step: {
+    name: string | null
+    display: string | null
+    since_s: number | null
+    goal: string
+    watch: string
+    next_name: string | null
+    next_display: string | null
+    stale: boolean
+    basis: string
+  }
+  events: SceneEvent[]
+  deviations: SceneEvent[]
+  models: Record<string, { loaded: boolean; metrics?: unknown; attribution?: string } & Record<string, unknown>>
 }
 
 export interface ScenarioSummary {

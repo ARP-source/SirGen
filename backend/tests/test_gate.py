@@ -1,7 +1,7 @@
 """Speak-or-hold gate: hold vs open, settle, urgent never held, surgeon-asks, timelines."""
 from __future__ import annotations
 
-from backend.gate import SETTLE_S, SpeechGate, hold_instrument, tools_at
+from backend.gate import DETECTOR_UNAVAILABLE, SETTLE_S, SpeechGate, hold_instrument, tools_at
 from backend.scenario import load_all
 
 
@@ -91,44 +91,30 @@ def test_open_speaks_immediately():
     assert g.speech_view().current.release_reason == "clear to speak"
 
 
-def test_true_bleed_open_at_event_bipolar_later(scenarios):
-    raw = scenarios["true_bleed"].raw
-    tools, basis = tools_at(raw, 60.0)
-    assert "Irrigator" in tools and hold_instrument(tools) is None
-    assert "scenario" in basis
-    tools_bi, _ = tools_at(raw, 95.0)
-    assert hold_instrument(tools_bi) == "Bipolar"
+def test_tools_come_only_from_the_live_detector():
+    tools, basis = tools_at(["Hook", "Grasper"])
+    assert tools == ["Grasper", "Hook"] and basis == "live detector" and hold_instrument(tools) == "Hook"
+    tools, basis = tools_at(None)
+    assert tools == [] and basis == DETECTOR_UNAVAILABLE
 
 
-def test_drug_effect_holds_then_opens(scenarios):
-    raw = scenarios["drug_effect"].raw
-    assert hold_instrument(tools_at(raw, 30.0)[0]) == "Hook"
-    assert hold_instrument(tools_at(raw, 46.0)[0]) is None
-
-
-def test_artifact_holds_until_92(scenarios):
-    raw = scenarios["artifact"].raw
-    assert hold_instrument(tools_at(raw, 50.0)[0]) == "Hook"
-    assert hold_instrument(tools_at(raw, 91.9)[0]) == "Hook"
-    assert hold_instrument(tools_at(raw, 92.0)[0]) is None
-
-
-def test_live_detector_overrides_scenario(scenarios):
-    raw = scenarios["artifact"].raw
-    tools, basis = tools_at(raw, 10.0, live_tools=["Grasper"])
-    assert tools == ["Grasper"] and basis == "live detector"
-    tools2, basis2 = tools_at(raw, 10.0, live_tools=None)
-    assert hold_instrument(tools2) == "Hook" and "scenario" in basis2
-
-
-def test_set_live_tools_none_falls_back(scenarios):
+def test_set_live_tools_none_means_unknown_not_scripted():
     g = SpeechGate()
     g.set_live_tools(["Clipper"])
-    tools, basis = tools_at(scenarios["true_bleed"].raw, 60.0, live_tools=g.live_tools)
-    assert tools == ["Clipper"] and basis == "live detector"
+    tools, basis = tools_at(g.live_tools)
+    g.on_clock(1.0, tools, basis)
+    assert g.view().status == "hold" and g.view().basis == "live detector"
     g.set_live_tools(None)
-    tools, basis = tools_at(scenarios["true_bleed"].raw, 60.0, live_tools=g.live_tools)
-    assert hold_instrument(tools) is None
+    tools, basis = tools_at(g.live_tools)
+    assert tools == [] and basis == DETECTOR_UNAVAILABLE
+
+
+def test_safety_check_is_never_held():
+    g = SpeechGate()
+    g.on_clock(0.0, ["Clipper"], "live detector")
+    g.offer("Check: Clipper in view before the Critical View of Safety was seen on video.", kind="safety_check", urgent=True)
+    cur = g.speech_view().current
+    assert cur is not None and cur.kind == "safety_check" and "safety check" in (cur.release_reason or "")
 
 
 def test_load_all_still_works():

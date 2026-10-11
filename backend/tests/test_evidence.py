@@ -7,14 +7,21 @@ from backend.agents.evidence import EvidenceContext, build_user_message, recover
 from backend.scenario import load_all
 from backend.state import Event, PhaseState
 
+from .scripted_video import ScriptedScene
+
 DATA = Path(__file__).resolve().parents[2] / "data"
 PATIENT = json.loads((DATA / "patient/patient_record.json").read_text())
 PHASE = json.loads((DATA / "procedure/phase_rules.json").read_text())
 
 
-def ctx_for(scenarios, sid, now, **kw):
+def ctx_for(scenarios, sid, now, video=True, **kw):
     sc = scenarios[sid]
     ev = Event(event_id="ev-1", event_type=sc.event_type, event_timestamp=sc.event_t_s, trigger="scenario", simulated=True)
+    if video:
+        scene = ScriptedScene(sc, PHASE)
+        kw.setdefault("phase_state", scene.phase_state(now))
+        kw.setdefault("scene", scene.view())
+        kw.setdefault("video_events", scene.visible_events(now))
     return EvidenceContext(sc, ev, now, PATIENT, PHASE, **kw)
 
 
@@ -81,14 +88,15 @@ def test_phase_from_state_overrides_scenario_data(scenarios):
     assert surg.block["phase"]["display"] == "Cleaning and coagulation" and surg.block["phase"]["set_by"] == "presenter"
     assert surg.block["phase"]["since_rel_alert_s"] == -20
     assert surg.block["tools_window"]["seconds_present"] == {"Irrigator": 8, "Bipolar": 4}
-    assert surg.block["tools_window"]["basis"] == "detector window"
-    assert surg.block["observations"] == []  # irrigator in the cleaning phase is not out of phase
+    assert surg.block["tools_window"]["basis"] == "live instrument detector"
 
 
-def test_scenario_data_is_labelled_as_such_and_omni_is_labelled(scenarios):
-    surg = ctx_for(scenarios, "true_bleed", 60).surgical()
-    assert "no live detector" in surg.block["phase"]["set_by"] and "no live detector" in surg.block["tools_window"]["basis"]
-    assert surg.block["omni"] is None
+def test_no_video_models_means_no_surgical_evidence_and_omni_is_labelled(scenarios):
+    surg = ctx_for(scenarios, "true_bleed", 60, video=False).surgical()
+    assert surg.allowed_ids == [] and surg.block["detector"]["status"] == "not running"
+    assert surg.block["surgical_events"] == [] and "tools_window" not in surg.block and "phase" not in surg.block
+    assert "surg-" not in json.dumps(surg.block)  # the scenario file's events are never read by product code
+    assert ctx_for(scenarios, "true_bleed", 60).surgical().block["omni"] is None
     withomni = ctx_for(scenarios, "true_bleed", 60, omni={"source_id": "omni-ev-1", "answer": "No blood is visible."}).surgical()
     assert withomni.block["omni"] == {"source_id": "omni-ev-1", "answer": "No blood is visible."}
     assert "omni-ev-1" in withomni.allowed_ids

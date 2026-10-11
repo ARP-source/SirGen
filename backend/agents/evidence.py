@@ -280,12 +280,14 @@ class EvidenceContext:
         if sid == "cvs":
             seen = self.surgical().block.get("anatomy_cvs", {}).get("criteria_seen", [])
             return f"{len(seen)} of 3 safety-view criteria seen on video"
-        if sid.startswith("vid-"):
-            e = next((x for x in self.video_events if x.source_id == sid), None)
-            if e is None:
-                return sid
-            text = re.sub(r"\s*\([^)]*\)", "", e.text).strip()
-            return f"{_lower_first(text)}, {self._rel_text(self.rel(e.t_s))}"
+        e = next((x for x in self.video_events if x.source_id == sid), None)
+        if e is not None:
+            text = re.sub(r"\s*\([^)]*\)", "", e.text.split(";")[0]).strip()
+            if e.kind in ("observation", "deviation"):
+                return _lower_first(text)
+            rel = self.rel(e.t_s) or 0
+            when = f"from {abs(rel)} s before the alert" if rel < 0 else self._rel_text(rel)
+            return f"{_lower_first(text)}, {when}"
         if sid.startswith("oop-"):
             o = next((x for x in self.phase_json.get("out_of_phase_events", []) if x["id"] == sid), None)
             return _lower_first(o["event"]) if o else sid

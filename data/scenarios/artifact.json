@@ -45,10 +45,6 @@
     {"source_id": "drug-01", "t_s": -2400, "drug": "propofol", "detail": "TCI running, target 3.0 mcg/mL, unchanged", "provenance": "simulated"},
     {"source_id": "drug-02", "t_s": -2400, "drug": "remifentanil", "detail": "TCI running, target 4.0 ng/mL, unchanged", "provenance": "simulated"}
   ],
-  "instrument_timeline": [
-    {"t_s": 0,  "tools": ["Grasper", "Hook"]},
-    {"t_s": 92, "tools": ["Grasper"]}
-  ],
   "surgical_events": [
     {"source_id": "surg-01", "t_s": 0, "event": "Grasper and hook in view; steady dissection, no new instrument for the whole segment", "tools": ["Grasper", "Hook"], "provenance": "real footage; detector output"}
   ],
