@@ -1,0 +1,77 @@
+{
+  "note": "EVALUATION / DESIGN NOTES ONLY. Ground truth and expected behaviour for scoring this scenario. Never loaded by the running app and never shown to an agent; read only by tests (backend/tests/fake_llm.py) and eval scripts.",
+  "scenario_id": "drug_effect",
+  "ground_truth_cause": {
+    "category": "drug_effect",
+    "text": "Real post-induction hypotension in VitalDB case 59 (MAP about 44-52 mmHg at minutes 7-9) while propofol and remifentanil TCI were running, before incision. Moved onto an operative video segment (time-shifted)."
+  },
+  "agent_evidence": {
+    "surgical": [
+      "phase: CalotTriangleDissection",
+      "surg-01",
+      "Omni answer on last 10 s of video, if available"
+    ],
+    "anesthesia": [
+      "vit-art",
+      "drug-01",
+      "drug-02",
+      "drug-03"
+    ],
+    "record": [
+      "meds-02",
+      "meds-01",
+      "enc-03",
+      "note-02"
+    ]
+  },
+  "expected_hypotheses": {
+    "surgical": {
+      "category": "unclear",
+      "confidence": "medium",
+      "gist": "No surgical event, bleeding sign or new instrument in the last 2 minutes; nothing in the field explains the fall.",
+      "cites": [
+        "surg-01"
+      ]
+    },
+    "anesthesia": {
+      "category": "drug_effect",
+      "confidence": "high",
+      "gist": "MAP fell within about 90 s of a propofol increase with propofol and remifentanil running; HR flat to low, not rising.",
+      "cites": [
+        "drug-03",
+        "drug-01",
+        "drug-02",
+        "vit-art"
+      ]
+    },
+    "record": {
+      "category": "drug_effect",
+      "confidence": "low",
+      "gist": "Losartan taken this morning; this drug class is associated with low pressure under anaesthesia. Also on apixaban (last dose 19 h ago), with no surgical signal reported.",
+      "cites": [
+        "meds-02",
+        "meds-01"
+      ]
+    }
+  },
+  "expected_convergence": {
+    "converge": true,
+    "outcome": "converged",
+    "shared_category": "drug_effect",
+    "note": "Two agents agree and the third is unclear, which counts as converged under the SPEC rule."
+  },
+  "expected_sentinel_output": {
+    "alert": "banner (immediate, from code)",
+    "shared_view": "The sources agree this fits a drug effect: the fall began within about 90 s of a propofol increase, HR is not rising, and no surgical event is seen.",
+    "team_question": "Does the drug timing match what the anaesthesia team sees, and is the field unchanged?",
+    "must_not_contain": [
+      "diagnosis",
+      "treatment instruction",
+      "risk percentage"
+    ]
+  },
+  "scoring": {
+    "alarm_needed": true,
+    "correct_explanation_if": "shared view is drug_effect, or drug_effect is one side of a split"
+  }
+}

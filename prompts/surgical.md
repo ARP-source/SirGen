@@ -12,7 +12,7 @@ EVIDENCE: {
   "phase": {"source_id": "phase", "display": "...", "since_rel_alert_s": -60, "stale": false, "set_by": "detector heuristic" | "presenter"},
   "tools_window": {"source_id": "tools", "window_s": 10, "seconds_present": {"Grasper": 9, "Irrigator": 8}},
   "anatomy_cvs": {"source_id": "cvs", "structures_in_view": ["cystic_duct", "..."], "criteria_seen": ["c1_two_structures", "..."], "cvs_seen_rel_alert_s": -80 | null},
-  "surgical_events": [{"source_id": "vid-4", "rel_alert_s": -35, "event": "...", "tools": ["..."]}],
+  "video_events": [{"source_id": "vid-4", "rel_alert_s": -35, "event": "...", "tools": ["..."]}],
   "observations": [{"source_id": "vid-6", "rel_alert_s": -15, "event": "...", "tools": ["..."], "note": "..."}],
   "omni": {"source_id": "omni-ev-1", "answer": "..."} | null
 }

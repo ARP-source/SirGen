@@ -46,7 +46,6 @@ the backend (all optional):
 | `LIGHTNING_URL` | `http://localhost:8000/v1` | Base URL including `/v1`. From another machine: `http://<gx10-host>:8000/v1`. |
 | `LIGHTNING_MODEL` | first id from `GET /v1/models` | Model name to send. Resolved lazily on the first agent call, so the backend starts without the model. |
 | `AGENT_TIMEOUT_S` | `8` | Seconds per model call (connect, generation and reading the body). |
-| `RECORD_EVIDENCE` | `full` | `full` gives the record agent the whole chart; `subset` gives it the scenario's `agent_evidence.record` ids. |
 | `SENTINEL_PROMPTS` | `prompts/` | Folder with `surgical.md`, `anesthesia.md`, `record.md` (sent verbatim as the system message). |
 | `OMNI_URL`, `OMNI_MODEL`, `OMNI_TIMEOUT_S`, `OMNI_ENABLED` | `http://localhost:8001/v1`, first id, `4`, `1` | Optional Omni question, see below. |
 
@@ -211,7 +210,7 @@ alert has been published, so a slow or dead model never delays the alert or the 
 
 `pytest -q` runs the M1 tests plus M3's. The M3 tests use a **TEST-ONLY stand-in server** (`backend/tests/fake_llm.py`;
 never imported by product code, and a test checks that). It is not a model. It returns schema-valid messages derived from each
-scenario's `expected_hypotheses`, so it proves plumbing and rules, not model quality.
+`data/eval/<scenario>.expected.json` files (never loaded by the app), so it proves plumbing and rules, not model quality.
 
 **Verified with the stand-in only:** concurrency, request shape (`max_tokens`, temperature, thinking off, `json_schema`),
 each agent seeing only its own evidence, validation and retry-once, unavailable handling, convergence and templates, cancel on

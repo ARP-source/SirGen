@@ -42,6 +42,8 @@
 - **Validate**: at most 2 sentences, ids allowed, and the banned list. The fixed refusal sentence "I can't advise on treatment..." is exempt.
 - **Output**: TTS speaks `spoken`, and the screen shows the cited entries. On failure, show "Context unavailable. Source record remains available for review." and speak nothing.
 
+> **Update (live video, no scripts).** The notes below were written when scenario files carried scripted `surgical_events` and an `agent_evidence` subset. Both are gone from the product: the surgical agent sees only live video-model output (`vid-N`, `cvs`, `phase`, `tools`), the record agent always sees the whole chart, and expected answers live in `data/eval/*.expected.json`, which the app never loads. Read mentions of `surg-0x`, `oop-N`, subset (a) and `expected_hypotheses` below as history.
+
 ## Self-check (run each scenario at least 5 times, then on the jittered eval variants)
 | Scenario (deliberation time) | surgical R1 → R2 | anesthesia R1 → R2 | record R1 → R2 | Outcome |
 |---|---|---|---|---|

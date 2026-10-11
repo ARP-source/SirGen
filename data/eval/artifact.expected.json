@@ -1,0 +1,75 @@
+{
+  "note": "EVALUATION / DESIGN NOTES ONLY. Ground truth and expected behaviour for scoring this scenario. Never loaded by the running app and never shown to an agent; read only by tests (backend/tests/fake_llm.py) and eval scripts.",
+  "scenario_id": "artifact",
+  "ground_truth_cause": {
+    "category": "artifact",
+    "text": "Simulated arterial-line flush artifact: a brief spike to about 277 mmHg that recovers within about 10 s; the patient's pressure is unchanged."
+  },
+  "agent_evidence": {
+    "surgical": [
+      "phase: GallbladderDissection",
+      "surg-01",
+      "Omni answer on last 10 s of video, if available"
+    ],
+    "anesthesia": [
+      "vit-art",
+      "vit-nibp-01",
+      "vit-nibp-02",
+      "drug-01",
+      "drug-02"
+    ],
+    "record": [
+      "enc-05",
+      "meds-01",
+      "meds-02"
+    ]
+  },
+  "expected_hypotheses": {
+    "surgical": {
+      "category": "artifact",
+      "confidence": "low",
+      "gist": "No surgical event or new instrument coincides with the spike; the field looks unchanged. Round 1 may be unclear; expected to agree with anesthesia in round 2.",
+      "cites": [
+        "surg-01"
+      ]
+    },
+    "anesthesia": {
+      "category": "artifact",
+      "confidence": "high",
+      "gist": "Spike to 277 mmHg recovered within about 10 s, HR and SpO2 unchanged, cuff pressure 126/70 at t 75 s, no drug change: fits a line flush or sensor artifact.",
+      "cites": [
+        "vit-art",
+        "vit-nibp-02",
+        "drug-01"
+      ]
+    },
+    "record": {
+      "category": "unclear",
+      "confidence": "low",
+      "gist": "Chart has an arterial line (left radial) and nothing that explains a transient spike.",
+      "cites": [
+        "enc-05"
+      ]
+    }
+  },
+  "expected_convergence": {
+    "converge": true,
+    "outcome": "converged",
+    "shared_category": "artifact",
+    "note": "Two agree on artifact and the third is unclear (SPEC rule). Converged result is shown quietly."
+  },
+  "expected_sentinel_output": {
+    "alert": "quiet flag (timeline mark, no banner)",
+    "shared_view": "Likely artifact: the arterial reading spiked and recovered within about 10 s, with no surgical event, unchanged HR and SpO2, and a normal cuff reading.",
+    "team_question": "Was the arterial line just flushed or sampled?",
+    "must_not_contain": [
+      "diagnosis",
+      "treatment instruction",
+      "risk percentage"
+    ]
+  },
+  "scoring": {
+    "alarm_needed": false,
+    "correct_explanation_if": "shared view is artifact and no banner is shown"
+  }
+}

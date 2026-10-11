@@ -37,7 +37,7 @@ FAILURES = {"bad_source_id", "hang", "http500", "length", "banned"}
 
 
 def _scenario_expected(scenario_id: str) -> dict[str, Any]:
-    raw = json.loads((DATA / "scenarios" / f"{scenario_id}.json").read_text())
+    raw = json.loads((DATA / "eval" / f"{scenario_id}.expected.json").read_text())
     return raw["expected_hypotheses"]
 
 

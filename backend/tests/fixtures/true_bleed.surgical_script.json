@@ -1,0 +1,47 @@
+{
+  "note": "TEST FIXTURE ONLY. A scripted instrument timeline used by backend/tests/scripted_video.py to stand in for the live vision models. Product code never reads this file; in the running system the surgical agent sees only live video-model output.",
+  "scenario_id": "true_bleed",
+  "procedure_phase_at_event": "ClippingCutting",
+  "surgical_events": [
+    {
+      "source_id": "surg-01",
+      "t_s": 5,
+      "event": "Clip applier in view; clips applied",
+      "tools": [
+        "Grasper",
+        "Clipper"
+      ],
+      "provenance": "real footage; detector output"
+    },
+    {
+      "source_id": "surg-02",
+      "t_s": 25,
+      "event": "Scissors in view; structure divided",
+      "tools": [
+        "Grasper",
+        "Scissors"
+      ],
+      "provenance": "real footage; detector output"
+    },
+    {
+      "source_id": "surg-03",
+      "t_s": 45,
+      "event": "Suction/irrigator appears and stays in view (out of usual phase order)",
+      "tools": [
+        "Grasper",
+        "Irrigator"
+      ],
+      "provenance": "real footage; detector output"
+    },
+    {
+      "source_id": "surg-04",
+      "t_s": 95,
+      "event": "Bipolar forceps appears alongside the irrigator",
+      "tools": [
+        "Irrigator",
+        "Bipolar"
+      ],
+      "provenance": "real footage; detector output"
+    }
+  ]
+}

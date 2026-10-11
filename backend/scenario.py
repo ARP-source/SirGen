@@ -129,8 +129,8 @@ def _event_type(raw: dict[str, Any]) -> Literal["map_drop", "art_spike"]:
 
 
 def _alert_level(raw: dict[str, Any]) -> Literal["banner", "quiet"]:
-    text = (raw.get("expected_sentinel_output", {}).get("alert", "") + " " + raw.get("event_note", "")).lower()
-    return "quiet" if "quiet flag" in text else "banner"
+    """The scenario's explicit `alert_level`; a banner unless it says `quiet`."""
+    return "quiet" if raw.get("alert_level") == "quiet" else "banner"
 
 
 def build_series(raw: dict[str, Any], data_dir: Path) -> VitalsSeries:

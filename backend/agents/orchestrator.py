@@ -107,7 +107,7 @@ def llm_throughput(rounds: list[list[_Turn]]) -> tuple[Optional[float], Optional
 class Orchestrator:
     def __init__(self, store: StateStore, player: Player, patient: dict[str, Any], phase_json: dict[str, Any],
                  client: Optional[LightningClient] = None, prompts_dir: Optional[Path] = None,
-                 record_mode: Optional[str] = None, poll_s: float = 0.2,
+                 poll_s: float = 0.2,
                  spike_max_wait_s: float = SPIKE_MAX_WAIT_S, omni: Optional[OmniFn] = None,
                  scene: Optional[Any] = None) -> None:
         self.store = store
@@ -116,7 +116,6 @@ class Orchestrator:
         self.patient = patient
         self.phase_json = phase_json
         self.client = client or LightningClient()
-        self.record_mode = record_mode or os.environ.get("RECORD_EVIDENCE", "full")
         self.poll_s = poll_s
         self.spike_max_wait_s = spike_max_wait_s
         self.omni = omni
@@ -219,7 +218,7 @@ class Orchestrator:
             await self._wait_for_spike(run, sc)
         t0 = time.perf_counter()
         ctx = EvidenceContext(sc, event, self.player.clock, self.patient, self.phase_json,
-                              phase_state=self.store.state.phase, omni=None, record_mode=self.record_mode,
+                              phase_state=self.store.state.phase, omni=None,
                               scene=self.store.state.scene,
                               video_events=self.scene.visible_events(self.player.clock) if self.scene else [])
         # Omni (optional) is asked for the surgical agent only; the other two start at once.

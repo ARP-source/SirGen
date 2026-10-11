@@ -72,13 +72,13 @@ def test_recovery_s(scenarios):
     assert recovery_s(sbp, 50, 60) == 9
 
 
-def test_record_whole_chart_drops_null_values_and_subset_mode(scenarios):
+def test_record_sees_the_whole_chart_without_null_values_in_every_scenario(scenarios):
     full = ctx_for(scenarios, "true_bleed", 60).record()
     ids = set(full.allowed_ids)
     assert {"lab-03", "lab-04", "lab-05"}.isdisjoint(ids) and {"meds-01", "lab-06", "note-02", "demo-01"} <= ids
     assert full.block["chart"][0]["source_id"] == "demo-01"  # copied as is, file order
-    sub = ctx_for(scenarios, "true_bleed", 60, record_mode="subset").record()
-    assert sub.allowed_ids == ["meds-01", "hx-01", "lab-01", "lab-06", "lab-07", "note-01"]
+    other = ctx_for(scenarios, "drug_effect", 30).record()
+    assert other.allowed_ids == full.allowed_ids and other.block == full.block  # no scenario picks a subset
 
 
 def test_phase_from_state_overrides_scenario_data(scenarios):
@@ -94,7 +94,7 @@ def test_phase_from_state_overrides_scenario_data(scenarios):
 def test_no_video_models_means_no_surgical_evidence_and_omni_is_labelled(scenarios):
     surg = ctx_for(scenarios, "true_bleed", 60, video=False).surgical()
     assert surg.allowed_ids == [] and surg.block["detector"]["status"] == "not running"
-    assert surg.block["surgical_events"] == [] and "tools_window" not in surg.block and "phase" not in surg.block
+    assert surg.block["video_events"] == [] and "tools_window" not in surg.block and "phase" not in surg.block
     assert "surg-" not in json.dumps(surg.block)  # the scenario file's events are never read by product code
     assert ctx_for(scenarios, "true_bleed", 60).surgical().block["omni"] is None
     withomni = ctx_for(scenarios, "true_bleed", 60, omni={"source_id": "omni-ev-1", "answer": "No blood is visible."}).surgical()

@@ -7,7 +7,8 @@ Data for the Sentinel-OR hackathon demo (research prototype, offline on the GX10
 | `fetch_vitaldb_case.py` | Downloads one VitalDB case (default 59) on a networked laptop: 1 Hz tracks, the `/cases` row and labs. Prints the lap chole cases that have an arterial line, minutes with MAP < 65, arterial spikes > 200 and TCI target changes. |
 | `vitaldb_case59_tracks.csv` / `_clinical.json` / `_labs.csv` | Produced by the script (not in the folder yet). `time_s` = seconds from casestart. |
 | `patient/patient_record.json` | Chart for the record agent. Every entry has a `source_id` (`demo-`, `enc-`, `hx-`, `meds-`, `alg-`, `lab-`, `note-`) and a `provenance`. |
-| `scenarios/true_bleed.json`, `drug_effect.json`, `artifact.json` | One schema: video segment (TODO), phase at event, vitals keyframes, drug log, surgical events, evidence per agent, expected hypotheses and convergence, expected Sentinel question, baseline rule outcome, scoring. `t_s` = seconds from the video segment start. |
+| `scenarios/true_bleed.json`, `drug_effect.json`, `artifact.json` | What the app replays, and nothing else: on-screen label, provenance, event time / type / alert level, vitals keyframes or VitalDB window, cuff readings, drug log, baseline-rule expectation. No agent evidence and no expected answers. The surgical agent's evidence comes only from the live video models. |
+| `eval/<scenario>.expected.json` | Ground truth and expected behaviour for scoring. Never loaded by the running app and never shown to an agent (a test enforces this). |
 | `procedure/phase_rules.json` | Cholec80's 7 phases and 7 tools, with heuristic sliding-window rules, hysteresis and allowed transitions. Not a validated model. |
 
 ## Provenance labels

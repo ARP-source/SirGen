@@ -4,8 +4,7 @@ used by the deterministic team question (prompts/team_question_templates.md sect
 Each agent gets ONLY its own block:
   surgical   phase, 10 s tool window, surgical events with t <= now, out-of-phase observations, Omni answer
   anesthesia vitals trend (1 Hz series), cuff readings and drug log with t <= now
-  record     the patient chart (whole chart by default; RECORD_EVIDENCE=subset uses the scenario's
-             `agent_evidence.record` ids). Entries whose value is null are left out.
+  record     the whole patient chart, the same in every scenario. Entries whose value is null are left out.
 
 All times are `rel_alert_s = t_s - alert_t_s`, computed here so the model never does time arithmetic.
 Everything is built from the loaded scenario, state and chart. Nothing is invented: where this
@@ -77,7 +76,7 @@ class EvidenceContext:
 
     def __init__(self, scenario: Scenario, event: Event, now_s: float, patient: dict[str, Any],
                  phase_json: dict[str, Any], phase_state: Optional[PhaseState] = None,
-                 omni: Optional[dict[str, str]] = None, record_mode: str = "full",
+                 omni: Optional[dict[str, str]] = None,
                  scene: Optional[SceneView] = None, video_events: Optional[list[SceneEvent]] = None) -> None:
         self.scene = scene
         self.video_events = list(video_events or [])
@@ -90,7 +89,6 @@ class EvidenceContext:
         self.phase_display = {p["name"]: p["display"] for p in phase_json.get("phases", [])}
         self.phase_state = phase_state or PhaseState()
         self.omni = omni
-        self.record_mode = record_mode
         self.chart = flatten_chart(patient)
         self.by_id: dict[str, dict[str, Any]] = {e["source_id"]: e for e in self.chart}
         self._surgical: Optional[AgentEvidence] = None
@@ -161,11 +159,11 @@ class EvidenceContext:
             sees.append({"source_id": "cvs", "text": f"Critical View of Safety criteria seen now: {len(seen)} of 3"
                          + ("" if scene.cvs_seen_at_s is None else ", all three seen earlier")})
 
-        block["surgical_events"] = []
+        block["video_events"] = []
         block["observations"] = []
         for e in self.visible_events:
             rel = self.rel(e.t_s)
-            target = "observations" if e.kind in ("observation", "deviation") else "surgical_events"
+            target = "observations" if e.kind in ("observation", "deviation") else "video_events"
             row: dict[str, Any] = {"source_id": e.source_id, "rel_alert_s": rel, "event": e.text, "tools": e.tools}
             if target == "observations":
                 row["note"] = e.data.get("note", "")
@@ -182,7 +180,7 @@ class EvidenceContext:
 
         allowed = [i for i, key in (("phase", "phase"), ("tools", "tools_window"), ("cvs", "anatomy_cvs"))
                    if key in block]
-        allowed += [e["source_id"] for e in block["surgical_events"]]
+        allowed += [e["source_id"] for e in block["video_events"]]
         allowed += [o["source_id"] for o in block["observations"]]
         if self.omni:
             allowed.append(self.omni["source_id"])
@@ -252,15 +250,8 @@ class EvidenceContext:
 
     # ---- record -------------------------------------------------------------------------------------
     def record(self) -> AgentEvidence:
-        entries = self.chart
-        if self.record_mode == "subset":
-            wanted = [i for i in self.sc.raw.get("agent_evidence", {}).get("record", []) if i in self.by_id]
-            entries = [self.by_id[i] for i in wanted]
-        note = (f"patient chart, {len(entries)} entries " +
-                ("(whole chart; null values left out)" if self.record_mode != "subset" else "(scenario subset; null values left out)"))
-        sees = [{"source_id": None, "text": note}]
-        if self.record_mode == "subset":
-            sees += [{"source_id": e["source_id"], "text": self.phrase(e["source_id"])} for e in entries]
+        entries = self.chart  # always the whole chart: no scenario picks what the record agent sees
+        sees = [{"source_id": None, "text": f"patient chart, {len(entries)} entries (whole chart; null values left out)"}]
         chart = [{k: v for k, v in e.items() if k not in CHART_METADATA_KEYS} for e in entries]
         return AgentEvidence("record", {"chart": chart}, [e["source_id"] for e in entries], sees)
 

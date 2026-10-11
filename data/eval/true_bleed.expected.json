@@ -1,0 +1,82 @@
+{
+  "note": "EVALUATION / DESIGN NOTES ONLY. Ground truth and expected behaviour for scoring this scenario. Never loaded by the running app and never shown to an agent; read only by tests (backend/tests/fake_llm.py) and eval scripts.",
+  "scenario_id": "true_bleed",
+  "ground_truth_cause": {
+    "category": "bleeding_concern",
+    "text": "Simulated haemorrhage starting after clipping and cutting, in a patient on apixaban. The propofol target increase 25 s before the segment is a deliberate confounder."
+  },
+  "agent_evidence": {
+    "surgical": [
+      "phase: ClippingCutting",
+      "surg-01",
+      "surg-02",
+      "surg-03",
+      "surg-04",
+      "Omni answer on last 10 s of video, if available"
+    ],
+    "anesthesia": [
+      "vit-art",
+      "vit-nibp-01",
+      "drug-01",
+      "drug-02",
+      "drug-03"
+    ],
+    "record": [
+      "meds-01",
+      "hx-01",
+      "lab-01",
+      "lab-06",
+      "lab-07",
+      "note-01"
+    ]
+  },
+  "expected_hypotheses": {
+    "surgical": {
+      "category": "bleeding_concern",
+      "confidence": "medium",
+      "gist": "Pressure began falling about 20 s after cutting, and suction/irrigation then bipolar appeared out of the usual order.",
+      "cites": [
+        "surg-02",
+        "surg-03",
+        "surg-04"
+      ]
+    },
+    "anesthesia": {
+      "category": "drug_effect",
+      "confidence": "low",
+      "gist": "Propofol target was raised about 70 s before the fall began; but HR is rising, which a propofol effect alone does not usually explain.",
+      "cites": [
+        "drug-03",
+        "vit-art"
+      ]
+    },
+    "record": {
+      "category": "bleeding_concern",
+      "confidence": "medium",
+      "gist": "Patient takes apixaban, last dose about 19 h before incision; anti-Xa level not sent; pre-op Hb 11.2 g/dL.",
+      "cites": [
+        "meds-01",
+        "lab-06",
+        "lab-01"
+      ]
+    }
+  },
+  "expected_convergence": {
+    "converge": false,
+    "outcome": "split",
+    "note": "Main demo beat (build plan section 6). Acceptable alternative: converged on bleeding_concern if the anesthesia agent moves to unclear in round 2."
+  },
+  "expected_sentinel_output": {
+    "alert": "banner (immediate, from code)",
+    "team_question": "Two explanations fit: possible bleeding (just after clipping and cutting; suction and bipolar now in use; apixaban 19 h ago) and drug effect (propofol increase about 85 s before the alert). Check the field for bleeding and confirm the drug timing.",
+    "must_not_contain": [
+      "diagnosis",
+      "treatment instruction",
+      "risk percentage"
+    ]
+  },
+  "scoring": {
+    "alarm_needed": true,
+    "correct_explanation_if": "bleeding_concern is shown (shared view or one side of a split)"
+  }
+}

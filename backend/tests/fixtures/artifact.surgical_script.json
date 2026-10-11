@@ -1,0 +1,17 @@
+{
+  "note": "TEST FIXTURE ONLY. A scripted instrument timeline used by backend/tests/scripted_video.py to stand in for the live vision models. Product code never reads this file; in the running system the surgical agent sees only live video-model output.",
+  "scenario_id": "artifact",
+  "procedure_phase_at_event": "GallbladderDissection",
+  "surgical_events": [
+    {
+      "source_id": "surg-01",
+      "t_s": 0,
+      "event": "Grasper and hook in view; steady dissection, no new instrument for the whole segment",
+      "tools": [
+        "Grasper",
+        "Hook"
+      ],
+      "provenance": "real footage; detector output"
+    }
+  ]
+}

@@ -3,21 +3,40 @@
   "id": "drug_effect",
   "title": "Pressure falls with propofol and remifentanil running, no surgical event",
   "on_screen_label": "Composite: Cholec80 video + VitalDB case 59 vitals (real, post-induction), time-shifted to an operative phase",
-  "provenance": {"video": "real: Cholec80 (recorded, de-identified)", "vitals": "real: VitalDB case 59 (time-shifted); fallback keyframes approximate", "drug_log": "real TCI tracks from VitalDB case 59 once fetched; drug-03 is a synthetic placeholder", "patient": "patient/patient_record.json"},
-  "ground_truth_cause": {"category": "drug_effect", "text": "Real post-induction hypotension in VitalDB case 59 (MAP about 44-52 mmHg at minutes 7-9) while propofol and remifentanil TCI were running, before incision. Moved onto an operative video segment (time-shifted)."},
+  "provenance": {
+    "video": "real: Cholec80 (recorded, de-identified)",
+    "vitals": "real: VitalDB case 59 (time-shifted); fallback keyframes approximate",
+    "drug_log": "real TCI tracks from VitalDB case 59 once fetched; drug-03 is a synthetic placeholder",
+    "patient": "patient/patient_record.json"
+  },
   "time_base": "t_s = seconds from video segment start; negative = before the segment starts.",
   "duration_s": 120,
   "event_t_s": 30,
   "event_note": "Suggested code trigger point: MAP down >= 10 mmHg from its 60-s baseline. Re-derive from real data once fetched.",
-  "video": {"dataset": "Cholec80", "video_id": "TODO-pick-after-testing-detector", "start_s": null, "end_s": null,
-            "selection_hint": "A calm CalotTriangleDissection stretch: Grasper + Hook only for the whole 120 s, no Clipper, Scissors or Irrigator."},
-  "procedure_phase_at_event": "CalotTriangleDissection",
+  "event_type": "map_drop",
+  "alert_level": "banner",
+  "video": {
+    "dataset": "Cholec80",
+    "video_id": "TODO-pick-after-testing-detector",
+    "start_s": null,
+    "end_s": null,
+    "selection_hint": "A calm CalotTriangleDissection stretch: Grasper + Hook only for the whole 120 s, no Clipper, Scissors or Irrigator."
+  },
   "vitals": {
     "vitals_source": {
       "type": "vitaldb_window",
       "file": "vitaldb_case59_tracks.csv",
-      "columns": {"hr": "HR", "sbp": "ART_SBP", "dbp": "ART_DBP", "map": "ART_MBP", "spo2": "SPO2"},
-      "real_window_s": [360, 1140],
+      "columns": {
+        "hr": "HR",
+        "sbp": "ART_SBP",
+        "dbp": "ART_DBP",
+        "map": "ART_MBP",
+        "spo2": "SPO2"
+      },
+      "real_window_s": [
+        360,
+        1140
+      ],
       "real_window_note": "Minutes 6-19 from casestart: A-line connected at about minute 6; MAP about 44-52 at minutes 7-9 and 54-65 at minutes 12-17, recovering to 86-105 by minutes 18-19; arterial spikes 220-277 at minutes 16-17 (artifact, exclude). Values read via a page fetcher from 1-min FHIR chunks; re-check.",
       "excerpt_real_start_s": "TODO-after-fetch: pick a 120-s excerpt inside the window (scenario t_s = real time_s - excerpt_real_start_s)",
       "time_shift": "Real event is post-induction, before incision (about minute 20). Shown during CalotTriangleDissection; must be labelled time-shifted."
@@ -25,53 +44,149 @@
     "source_id": "vit-art",
     "fallback_keyframes_label": "approximate: shaped from the 1-min summaries in the research notes, not real samples. t_s 0-20 and all HR values are placeholders (no real values known yet).",
     "keyframes": [
-      {"t_s": 0,   "hr": 62, "sbp": 104, "dbp": 54, "map": 71, "spo2": 99},
-      {"t_s": 10,  "hr": 61, "sbp": 100, "dbp": 52, "map": 68, "spo2": 99},
-      {"t_s": 20,  "hr": 60, "sbp": 96,  "dbp": 50, "map": 65, "spo2": 99},
-      {"t_s": 30,  "hr": 60, "sbp": 90,  "dbp": 47, "map": 61, "spo2": 99},
-      {"t_s": 40,  "hr": 59, "sbp": 85,  "dbp": 44, "map": 58, "spo2": 99},
-      {"t_s": 50,  "hr": 58, "sbp": 80,  "dbp": 42, "map": 55, "spo2": 99},
-      {"t_s": 60,  "hr": 58, "sbp": 76,  "dbp": 40, "map": 52, "spo2": 99},
-      {"t_s": 70,  "hr": 57, "sbp": 74,  "dbp": 39, "map": 51, "spo2": 99},
-      {"t_s": 80,  "hr": 57, "sbp": 72,  "dbp": 38, "map": 49, "spo2": 99},
-      {"t_s": 90,  "hr": 57, "sbp": 71,  "dbp": 37, "map": 48, "spo2": 99},
-      {"t_s": 100, "hr": 56, "sbp": 70,  "dbp": 37, "map": 48, "spo2": 99},
-      {"t_s": 110, "hr": 56, "sbp": 71,  "dbp": 38, "map": 49, "spo2": 99},
-      {"t_s": 120, "hr": 56, "sbp": 72,  "dbp": 38, "map": 49, "spo2": 99}
+      {
+        "t_s": 0,
+        "hr": 62,
+        "sbp": 104,
+        "dbp": 54,
+        "map": 71,
+        "spo2": 99
+      },
+      {
+        "t_s": 10,
+        "hr": 61,
+        "sbp": 100,
+        "dbp": 52,
+        "map": 68,
+        "spo2": 99
+      },
+      {
+        "t_s": 20,
+        "hr": 60,
+        "sbp": 96,
+        "dbp": 50,
+        "map": 65,
+        "spo2": 99
+      },
+      {
+        "t_s": 30,
+        "hr": 60,
+        "sbp": 90,
+        "dbp": 47,
+        "map": 61,
+        "spo2": 99
+      },
+      {
+        "t_s": 40,
+        "hr": 59,
+        "sbp": 85,
+        "dbp": 44,
+        "map": 58,
+        "spo2": 99
+      },
+      {
+        "t_s": 50,
+        "hr": 58,
+        "sbp": 80,
+        "dbp": 42,
+        "map": 55,
+        "spo2": 99
+      },
+      {
+        "t_s": 60,
+        "hr": 58,
+        "sbp": 76,
+        "dbp": 40,
+        "map": 52,
+        "spo2": 99
+      },
+      {
+        "t_s": 70,
+        "hr": 57,
+        "sbp": 74,
+        "dbp": 39,
+        "map": 51,
+        "spo2": 99
+      },
+      {
+        "t_s": 80,
+        "hr": 57,
+        "sbp": 72,
+        "dbp": 38,
+        "map": 49,
+        "spo2": 99
+      },
+      {
+        "t_s": 90,
+        "hr": 57,
+        "sbp": 71,
+        "dbp": 37,
+        "map": 48,
+        "spo2": 99
+      },
+      {
+        "t_s": 100,
+        "hr": 56,
+        "sbp": 70,
+        "dbp": 37,
+        "map": 48,
+        "spo2": 99
+      },
+      {
+        "t_s": 110,
+        "hr": 56,
+        "sbp": 71,
+        "dbp": 38,
+        "map": 49,
+        "spo2": 99
+      },
+      {
+        "t_s": 120,
+        "hr": 56,
+        "sbp": 72,
+        "dbp": 38,
+        "map": 49,
+        "spo2": 99
+      }
     ],
     "nibp": [
-      {"source_id": "vit-nibp-01", "t_s": null, "note": "Fill from NIBP_* columns in the excerpt if a cuff reading exists", "provenance": "real: VitalDB case 59 (pending)"}
+      {
+        "source_id": "vit-nibp-01",
+        "t_s": null,
+        "note": "Fill from NIBP_* columns in the excerpt if a cuff reading exists",
+        "provenance": "real: VitalDB case 59 (pending)"
+      }
     ]
   },
   "drug_log": [
-    {"source_id": "drug-01", "t_s": null, "drug": "propofol", "detail": "TCI running (Orchestra PPF20); effect-site about 2.7 mcg/mL around minute 20", "provenance": "real: VitalDB case 59 tracks (approximate from notes; fill exact times and values from PPF20_CE/CT/RATE)"},
-    {"source_id": "drug-02", "t_s": null, "drug": "remifentanil", "detail": "TCI running (Orchestra RFTN20); effect-site about 4.5 ng/mL", "provenance": "real: VitalDB case 59 tracks (approximate from notes; fill from RFTN20_CE/CT/RATE)"},
-    {"source_id": "drug-03", "t_s": -60, "drug": "propofol", "detail": "TCI target increased (rate increase)", "provenance": "synthetic placeholder: replace with a real PPF20_CT/RATE change from the fetch script output if one precedes the excerpt; otherwise delete and reword to 'propofol and remifentanil running since induction'"}
+    {
+      "source_id": "drug-01",
+      "t_s": null,
+      "drug": "propofol",
+      "detail": "TCI running (Orchestra PPF20); effect-site about 2.7 mcg/mL around minute 20",
+      "provenance": "real: VitalDB case 59 tracks (approximate from notes; fill exact times and values from PPF20_CE/CT/RATE)"
+    },
+    {
+      "source_id": "drug-02",
+      "t_s": null,
+      "drug": "remifentanil",
+      "detail": "TCI running (Orchestra RFTN20); effect-site about 4.5 ng/mL",
+      "provenance": "real: VitalDB case 59 tracks (approximate from notes; fill from RFTN20_CE/CT/RATE)"
+    },
+    {
+      "source_id": "drug-03",
+      "t_s": -60,
+      "drug": "propofol",
+      "detail": "TCI target increased (rate increase)",
+      "provenance": "synthetic placeholder: replace with a real PPF20_CT/RATE change from the fetch script output if one precedes the excerpt; otherwise delete and reword to 'propofol and remifentanil running since induction'"
+    }
   ],
-  "surgical_events": [
-    {"source_id": "surg-01", "t_s": 0, "event": "Grasper and hook in view; steady dissection, no new instrument for the whole segment", "tools": ["Grasper", "Hook"], "provenance": "real footage; detector output"}
-  ],
-  "agent_evidence": {
-    "surgical": ["phase: CalotTriangleDissection", "surg-01", "Omni answer on last 10 s of video, if available"],
-    "anesthesia": ["vit-art", "drug-01", "drug-02", "drug-03"],
-    "record": ["meds-02", "meds-01", "enc-03", "note-02"]
-  },
-  "expected_hypotheses": {
-    "surgical": {"category": "unclear", "confidence": "medium", "gist": "No surgical event, bleeding sign or new instrument in the last 2 minutes; nothing in the field explains the fall.", "cites": ["surg-01"]},
-    "anesthesia": {"category": "drug_effect", "confidence": "high", "gist": "MAP fell within about 90 s of a propofol increase with propofol and remifentanil running; HR flat to low, not rising.", "cites": ["drug-03", "drug-01", "drug-02", "vit-art"]},
-    "record": {"category": "drug_effect", "confidence": "low", "gist": "Losartan taken this morning; this drug class is associated with low pressure under anaesthesia. Also on apixaban (last dose 19 h ago), with no surgical signal reported.", "cites": ["meds-02", "meds-01"]}
-  },
-  "expected_convergence": {"converge": true, "outcome": "converged", "shared_category": "drug_effect",
-    "note": "Two agents agree and the third is unclear, which counts as converged under the SPEC rule."},
-  "expected_sentinel_output": {"alert": "banner (immediate, from code)",
-    "shared_view": "The sources agree this fits a drug effect: the fall began within about 90 s of a propofol increase, HR is not rising, and no surgical event is seen.",
-    "team_question": "Does the drug timing match what the anaesthesia team sees, and is the field unchanged?",
-    "must_not_contain": ["diagnosis", "treatment instruction", "risk percentage"]},
   "baseline_rule": {
     "rule": "Fixed BP rule: alarm if arterial MAP < 65 mmHg for >= 60 s (R1) or arterial SBP > 180 mmHg for >= 5 s (R2). Arterial-line numerics only, no context.",
-    "expected": "alarm", "fires": "R1", "fires_at_t_s": 81,
+    "expected": "alarm",
+    "fires": "R1",
+    "fires_at_t_s": 81,
     "correct": true,
     "comment": "Right to alarm (pressure is low) but gives no cause; with fallback keyframes it fires about 50 s after the code trigger. Recompute fires_at_t_s on real data."
-  },
-  "scoring": {"alarm_needed": true, "correct_explanation_if": "shared view is drug_effect, or drug_effect is one side of a split"}
+  }
 }
