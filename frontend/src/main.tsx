@@ -7,6 +7,7 @@ import Surgical from './pages/Surgical'
 import Dashboard from './pages/Dashboard'
 import Control from './pages/Control'
 import PostOp from './pages/PostOp'
+import AgentsPage from './pages/AgentsPage'
 
 function Home() {
   return (
@@ -18,6 +19,7 @@ function Home() {
         <li><Link to="/dashboard">/dashboard</Link> <span className="muted">screen 2, how it thinks</span></li>
         <li><Link to="/control">/control</Link> <span className="muted">presenter controls</span></li>
         <li><Link to="/post-op">/post-op</Link> <span className="muted">post-op report draft, from the audit log</span></li>
+        <li><Link to="/agents">/agents</Link> <span className="muted">the agent swarm, one card per agent</span></li>
       </ul>
     </div>
   )
@@ -31,6 +33,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/control" element={<Control />} />
         <Route path="/post-op" element={<PostOp />} />
+        <Route path="/agents" element={<AgentsPage />} />
         <Route path="*" element={<Home />} />
       </Routes>
     </BrowserRouter>
