@@ -29,6 +29,13 @@ VITALS_CREDIT = "Vitals: VitalDB case 59, Lee HC et al., Sci Data 2022 (CC BY 4.
 HOLOHUB_CREDIT = "Video: NVIDIA HoloHub endoscopy sample data."
 HOLOHUB_NAME = "NVIDIA HoloHub endoscopy sample"
 FOOTAGE_LABEL = "Recorded footage · Research prototype"
+FOOTAGE_LIVE_LABEL = (
+    "Live scope feed · Research prototype · inference on this session, not trained on this case"
+)
+LIVE_ATTRIBUTION = (
+    "Video: live ingest on this machine. Models trained on public lap chole datasets (Cholec80 / Endoscapes), "
+    "not on this feed. Vitals: VitalDB case 59, Lee HC et al., Sci Data 2022 (CC BY 4.0) when replayed."
+)
 COMPOSITE_LABEL = (
     "Composite of two de-identified public cases (Cholec80 video, VitalDB case 59 vitals). "
     "Some chart fields and scenarios synthetic."
@@ -199,6 +206,7 @@ class VideoInfo(BaseModel):
     source: Optional[str] = None
     label: str = ""
     test_pattern: bool = True
+    live_capture: bool = False
     frame_id: int = 0
     source_fps: Optional[float] = None
     dropped_frames: int = 0
@@ -243,7 +251,9 @@ class Labels(BaseModel):
     context_unavailable: str = CONTEXT_UNAVAILABLE
 
     @classmethod
-    def for_video(cls, source: Optional[str]) -> "Labels":
+    def for_video(cls, source: Optional[str], *, live_capture: bool = False) -> "Labels":
+        if live_capture:
+            return cls(footage=FOOTAGE_LIVE_LABEL, attribution=LIVE_ATTRIBUTION, composite=FOOTAGE_LIVE_LABEL)
         if not is_holohub_sample(source):
             return cls()
         return cls(attribution=f"{HOLOHUB_CREDIT} {VITALS_CREDIT}", composite=footage_text(COMPOSITE_LABEL, source))

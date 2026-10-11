@@ -34,12 +34,20 @@ Frame = tuple[int, np.ndarray]
 FrameSink = Callable[[int, np.ndarray], None]
 
 
+def is_live_capture(path: Path | str) -> bool:
+    """True for V4L2 device nodes (/dev/video*)."""
+    return str(path).startswith("/dev/video")
+
+
 def resolve_video(scenario: Optional[Scenario], repo_dir: Path) -> tuple[Optional[Path], str]:
     """Video path from $SENTINEL_VIDEO, else the scenario's `video.file`. Returns (path, note)."""
     env = os.environ.get("SENTINEL_VIDEO")
     if env:
         p = Path(env).expanduser()
-        return (p, f"SENTINEL_VIDEO={p}") if p.exists() else (None, f"SENTINEL_VIDEO not found: {p}")  # file or /dev/videoN
+        if is_live_capture(p):
+            present = p.exists()
+            return (p, f"live capture {p}" + ("" if present else " · device not present"))
+        return (p, f"SENTINEL_VIDEO={p}") if p.exists() else (None, f"SENTINEL_VIDEO not found: {p}")
     rel = (scenario.video.get("file") if scenario else None) or None
     if rel:
         assets = Path(os.environ.get("SENTINEL_ASSETS", repo_dir.parent / "assets"))
@@ -89,6 +97,7 @@ class VideoWorker:
         self.decode_error = ""  # why the file shows nothing, when it opens but yields no frames
         self.mean_brightness: Optional[float] = None  # of the last rendered frame, 0 (black) to 255
         self._black_run = 0
+        self.live_capture = False
         self.on_frame: Optional[FrameSink] = None  # the vision client's mailbox; never blocks
 
     # ---- control (called from the event loop) --------------------------------
@@ -123,8 +132,8 @@ class VideoWorker:
 
     def stats(self) -> dict[str, Any]:
         return {"source": str(self.source) if self.source else None, "label": self.source_note,
-                "test_pattern": self.source is None, "frame_id": self.frame_id,
-                "source_fps": self.source_fps, "dropped_frames": self.dropped,
+                "test_pattern": self.source is None, "live_capture": self.live_capture,
+                "frame_id": self.frame_id, "source_fps": self.source_fps, "dropped_frames": self.dropped,
                 "frames_decoded": self.frames_decoded, "decode_error": self.decode_error,
                 "mean_brightness": self.mean_brightness, "black_frames": self._black_run >= BLACK_RUN_FRAMES}
 
@@ -136,22 +145,35 @@ class VideoWorker:
         scenario = self._rewind_to
         path, note = resolve_video(scenario, self.repo_dir)
         self.source, self.source_note = path, note
+        self.live_capture = path is not None and is_live_capture(path)
         if path is None:
             self.source_fps = TEST_PATTERN_FPS
             log.info("video: test pattern (%s)", note)
             return None
-        cap = cv2.VideoCapture(str(path))
+        if self.live_capture and not path.exists():
+            self.source, self.source_note = None, f"live capture device missing: {path}"
+            self.source_fps = TEST_PATTERN_FPS
+            log.warning("video: %s", self.source_note)
+            return None
+        cap = cv2.VideoCapture(str(path), cv2.CAP_V4L2) if self.live_capture else cv2.VideoCapture(str(path))
+        if not cap.isOpened() and self.live_capture:
+            cap = cv2.VideoCapture(str(path))
         if not cap.isOpened():
             self.source, self.source_note = None, f"could not open {path}"
             self.source_fps = TEST_PATTERN_FPS
             log.warning("video: %s", self.source_note)
             return None
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        self.source_fps = float(fps) if fps and 1 <= fps <= 240 else DEFAULT_FPS
-        start_s = scenario.video.get("start_s") if scenario else None
-        if isinstance(start_s, (int, float)):
-            cap.set(cv2.CAP_PROP_POS_MSEC, float(start_s) * 1000.0)
-        log.info("video: %s at %.1f fps", path, self.source_fps)
+        if self.live_capture:
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            env_fps = os.environ.get("SENTINEL_CAPTURE_FPS")
+            self.source_fps = float(env_fps) if env_fps else DEFAULT_FPS
+        else:
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            self.source_fps = float(fps) if fps and 1 <= fps <= 240 else DEFAULT_FPS
+            start_s = scenario.video.get("start_s") if scenario else None
+            if isinstance(start_s, (int, float)):
+                cap.set(cv2.CAP_PROP_POS_MSEC, float(start_s) * 1000.0)
+        log.info("video: %s at %.1f fps%s", path, self.source_fps, " (live)" if self.live_capture else "")
         return cap
 
     def _push(self, frame: np.ndarray) -> None:
@@ -195,6 +217,9 @@ class VideoWorker:
                 continue
             frame = self._read(cap)
             if frame is None:
+                if self.live_capture:
+                    time.sleep(0.02)
+                    continue
                 if self.frames_decoded == 0:
                     # Opens but never yields a frame (codec or container the build of OpenCV cannot decode):
                     # say so, show the test pattern, and stop re-opening in a tight loop.

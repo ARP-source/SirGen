@@ -21,7 +21,11 @@ from .state import (
     AGENTS_NOT_ATTACHED, Baseline, DrugEntry, Event, NibpEntry, ScenarioInfo, StateStore,
     TimelineItem, Vitals, footage_text,
 )
-from .video_worker import resolve_video
+from pathlib import Path
+
+from .video_worker import is_live_capture, resolve_video
+
+_REPO = Path(__file__).resolve().parents[1]
 
 log = logging.getLogger("sentinel.telemetry")
 
@@ -117,6 +121,10 @@ class ScenarioPlayer:
     def run_s(self) -> float:
         """Run length: the scenario's segment, or longer with SENTINEL_RUN_S (e.g. a full surgery video).
         Vitals past the end of the recorded series read as not measured."""
+        path, _ = resolve_video(self.scenario, _REPO)
+        if path is not None and is_live_capture(path):
+            live_cap = float(os.environ.get("SENTINEL_LIVE_RUN_S", "7200"))
+            return float(max(self.scenario.duration_s, RUN_S, live_cap))
         return float(max(self.scenario.duration_s, RUN_S))
 
     # ---- presenter controls -------------------------------------------------

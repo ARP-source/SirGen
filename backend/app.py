@@ -87,7 +87,8 @@ async def metrics_loop(svc: Services, period_s: float = 1.0) -> None:
         m = m.model_copy(update={"detector_ms": sc.detector_ms, "detector_fps": sc.detector_fps})
         stats = svc.video.stats()
         stats["detector"] = f"{sc.status}: {sc.note}"
-        svc.store.update(metrics=m, video=VideoInfo(**stats), labels=Labels.for_video(stats["source"]))
+        svc.store.update(metrics=m, video=VideoInfo(**stats),
+                         labels=Labels.for_video(stats["source"], live_capture=bool(stats.get("live_capture"))))
         await asyncio.sleep(period_s)
 
 

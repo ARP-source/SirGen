@@ -58,6 +58,12 @@ def test_file_that_opens_but_yields_nothing_falls_back_to_the_pattern_and_says_w
     assert st["frames_decoded"] == 0 and w.latest() is not None  # the test pattern is being shown, not a black page
 
 
+def test_live_device_path_even_when_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("SENTINEL_VIDEO", "/dev/video0")
+    path, note = vw.resolve_video(None, tmp_path)
+    assert str(path) == "/dev/video0" and "live capture" in note
+
+
 def test_video_problems_reach_the_state(tmp_path, monkeypatch):
     from backend.state import VideoInfo
     clip = tmp_path / "black.mp4"

@@ -216,6 +216,7 @@ export interface SentinelState {
     source: string | null
     label: string
     test_pattern: boolean
+    live_capture?: boolean
     frame_id: number
     source_fps: number | null
     dropped_frames: number
