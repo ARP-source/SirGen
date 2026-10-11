@@ -194,6 +194,10 @@ def test_aftercare_is_a_cited_clinician_draft_and_coding_is_off_by_default(scena
     async def go():
         st, audit = await ran(scenarios, tmp_path)
         monkeypatch.delenv("SENTINEL_REPORT_CODING", raising=False)
+        monkeypatch.delenv("SENTINEL_REPORT_AFTERCARE", raising=False)
+        off = await R.generate(audit, narrative_client(good_handler), PATIENT, PROMPT, out_dir=tmp_path)
+        assert off.aftercare is None and "Aftercare" not in off.html_text and off.coding is None
+        monkeypatch.setenv("SENTINEL_REPORT_AFTERCARE", "1")
         rep = await R.generate(audit, narrative_client(good_handler), PATIENT, PROMPT, out_dir=tmp_path)
         h = rep.html_text
         assert "Aftercare and medication: Draft for clinician review" in h and "Medication reconciliation" in h

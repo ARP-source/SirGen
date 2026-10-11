@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 LOG_KINDS = ("phase_change", "video_event", "deviation", "alert", "baseline_alarm", "deliberation_result",
-             "drug_given", "nibp_reading", "voice_qa", "speech_urgent", "speech_spoken", "vision_status", "control")
+             "drug_given", "nibp_reading", "voice_qa", "speech_urgent", "speech_spoken", "vision_status", "control",
+             "procedure_reading")
 
 
 @dataclass
@@ -71,7 +72,21 @@ def _pretty(name: str) -> str:
 def _kind_label(e: dict[str, Any]) -> str:
     if e["kind"] == "video_event":
         return "video: " + str((e.get("data") or {}).get("kind", "")).replace("_", " ")
+    if e["kind"] == "procedure_reading":
+        return "procedure agent"
     return e["kind"].replace("_", " ")
+
+
+def _what(e: dict[str, Any]) -> str:
+    if e["kind"] == "procedure_reading":
+        d = e.get("data") or {}
+        parts = [d.get("doing", "")]
+        if d.get("intent"):
+            parts.append(f"Intent: {d['intent']}")
+        if d.get("concern"):
+            parts.append(f"Concern: {d['concern']}")
+        return " ".join(p for p in parts if p)
+    return e["summary"]
 
 
 def build_surgery_log(entries: list[dict[str, Any]], steps_ref: Optional[dict[str, Any]] = None) -> SurgeryLog:
@@ -124,7 +139,11 @@ def build_surgery_log(entries: list[dict[str, Any]], steps_ref: Optional[dict[st
             if st is not None and d.get("tool") and d["tool"] not in st.instruments:
                 st.instruments.append(d["tool"])
             continue
+        if k == "procedure_reading" and d.get("unavailable"):
+            continue  # a failed reading is in the audit log; the surgery log keeps what was read
         flag = ""
+        if k == "procedure_reading" and d.get("concern"):
+            flag = "concern"
         if k == "deviation":
             flag = "deviation"
             deviations.append({"log_id": e["id"], "clock_s": t, "what": e["summary"],
@@ -157,7 +176,7 @@ def build_surgery_log(entries: list[dict[str, Any]], steps_ref: Optional[dict[st
         if st:
             st.entries += 1
         rows.append(LogRow(log_id=e["id"], clock_s=t, step=st.display if st else "before the first step",
-                           kind=_kind_label(e), what=e["summary"], by=e["actor"], flag=flag))
+                           kind=_kind_label(e), what=_what(e), by=e["actor"], flag=flag))
     rows.sort(key=lambda r: (r.clock_s is None, r.clock_s or 0.0))
 
     seen_order: list[str] = []

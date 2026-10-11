@@ -47,9 +47,9 @@ _NUM = re.compile(r"\d+(?:\.\d+)?")
 # A sentence on one of these topics must cite at least one entry of a matching log kind.
 _TOPICS = [
     (re.compile(r"\b(video|critical view|cvs|deviat\w*|procedure steps?)\b", re.IGNORECASE),
-     ("| video_event |", "| deviation |", "| phase_change |")),
+     ("| video_event |", "| deviation |", "| phase_change |", "| procedure_reading |")),
     (re.compile(r"\bagents?\b|\bagreed\b|\bdisagreed\b|\bconverged\b", re.IGNORECASE),
-     ("| agent_message |", "| agent_unavailable |", "| deliberation_result |")),
+     ("| agent_message |", "| agent_unavailable |", "| deliberation_result |", "| procedure_reading |")),
 ]
 AGENTS = ("surgical", "anesthesia", "record")
 
@@ -164,6 +164,8 @@ def fact_lines(f: Facts, chart: dict[str, dict[str, Any]]) -> dict[str, str]:
             continue
         if e["kind"] == "video_event" and e["data"].get("kind") == "tool_in":
             continue  # instrument comings and goings stay in the table below, not in the model's input
+        if e["kind"] == "procedure_reading" and e["data"].get("unavailable"):
+            continue
         lines[e["id"]] = f"{t_label(e['clock_s'])} | {e['kind']} | {e['actor']} | {e['summary']}"
         if e["kind"] == "alert":
             v = e["data"].get("vitals", {})
@@ -192,6 +194,11 @@ def narrative_schema(allowed: list[str]) -> dict[str, Any]:
                                      "cites": {"type": "array", "minItems": 1, "maxItems": 4,
                                                "items": {"type": "string", "enum": allowed}}}}}},
     }
+
+
+def aftercare_enabled() -> bool:
+    """The aftercare section is off unless SENTINEL_REPORT_AFTERCARE=1 (Raag: keep aftercare and coding off)."""
+    return os.environ.get("SENTINEL_REPORT_AFTERCARE", "").strip() == "1"
 
 
 def coding_enabled() -> bool:
@@ -568,7 +575,7 @@ async def generate(audit: AuditLog, client: LightningClient, patient: dict[str, 
     ddir = data_dir or DATA_DIR
     ac_ref, cmap = _load(ddir / "procedure" / "lap_chole_aftercare.json"), _load(ddir / "billing" / "coding_map.json")
     report.surgery = build_surgery_log(facts.entries, _load(ddir / "procedure" / "lap_chole_steps.json"))
-    if ac_ref is not None:
+    if ac_ref is not None and aftercare_enabled():
         report.aftercare = build_aftercare(patient, ac_ref, facts.entries)
     if cmap is not None and coding_enabled():
         report.coding = build_coding(patient, cmap)

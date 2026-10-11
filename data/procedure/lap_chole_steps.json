@@ -1,46 +1,99 @@
 {
-  "schema_version": "1",
-  "label": "Procedure knowledge for laparoscopic cholecystectomy: what each step is for and what usually comes next. General surgical teaching, not specific to any video or patient. Not clinical advice.",
+  "schema_version": "2",
+  "label": "Procedure knowledge for laparoscopic cholecystectomy: what each step is for, how it is usually done, what usually comes next and the mistakes surgical teaching warns about. General surgical teaching, not specific to any video or patient. Not clinical advice.",
   "sources": [
     "Strasberg SM, Hertl M, Soper NJ. An analysis of the problem of biliary injury during laparoscopic cholecystectomy. J Am Coll Surg 1995;180(1):101-25 (Critical View of Safety).",
     "SAGES Safe Cholecystectomy Program, six strategies for a safe cholecystectomy.",
     "Twinanda AP et al. EndoNet, arXiv:1602.03012 (the seven Cholec80 phases used here)."
   ],
+  "principles": [
+    "Identify the cystic duct and cystic artery by the Critical View of Safety before any clip or cut.",
+    "Dissect close to the gallbladder wall; the common bile duct does not need to be seen or dissected.",
+    "Use energy (hook, bipolar) away from the common bile duct and the duodenum.",
+    "Clips go only on the two structures shown in the Critical View of Safety; check each clip is fully closed before dividing.",
+    "If the anatomy is unclear, stop and reassess (time-out, cholangiography, a second opinion or a bail-out such as subtotal cholecystectomy) rather than continue dissecting towards the bile duct."
+  ],
   "steps": {
     "Preparation": {
-      "goal": "Ports in, gallbladder fundus grasped and retracted to expose the hepatocystic triangle.",
+      "goal": "Ports in, abdomen inspected, gallbladder fundus grasped and retracted towards the right shoulder to open the hepatocystic triangle.",
+      "how": "Grasper on the fundus retracts cephalad; a second grasper on the infundibulum retracts laterally.",
+      "instruments": ["Grasper"],
       "next": "CalotTriangleDissection",
-      "watch": "Exposure of the triangle."
+      "watch": "Exposure of the triangle.",
+      "common_errors": [
+        "Pulling the infundibulum upwards instead of laterally, which lines the cystic duct up with the common bile duct."
+      ]
     },
     "CalotTriangleDissection": {
-      "goal": "Clear fat and fibrous tissue from the hepatocystic (Calot) triangle and separate the lower gallbladder from the cystic plate, until exactly two structures (cystic duct and cystic artery) enter the gallbladder.",
+      "goal": "Clear fat and fibrous tissue from the hepatocystic (Calot) triangle and separate the lower third of the gallbladder from the cystic plate, until exactly two structures (cystic duct and cystic artery) are seen entering the gallbladder.",
+      "how": "Hook or dissector peels peritoneum and fat off the triangle from the gallbladder side, front and back; blunt dissection along the gallbladder wall.",
+      "instruments": ["Hook", "Grasper", "Bipolar"],
       "next": "ClippingCutting",
-      "watch": "Critical View of Safety: all three criteria should be seen before any clip or cut."
+      "watch": "Critical View of Safety: all three criteria should be seen before any clip or cut.",
+      "common_errors": [
+        "Dissecting towards the common bile duct instead of along the gallbladder wall.",
+        "Taking a single visible duct as the cystic duct without clearing the triangle (misidentification is the usual cause of bile duct injury).",
+        "Energy used deep in the triangle near the bile duct.",
+        "Bleeding from a cystic artery branch obscuring the view, then blind coagulation."
+      ]
     },
     "ClippingCutting": {
-      "goal": "Clip and divide the cystic artery and cystic duct.",
+      "goal": "Clip and divide the cystic artery and the cystic duct, each shown in the Critical View of Safety.",
+      "how": "Usually two clips on the stay side and one on the specimen side of each structure, then scissors between the clips.",
+      "instruments": ["Clipper", "Scissors", "Grasper"],
       "next": "GallbladderDissection",
-      "watch": "Clips go only on the two structures shown in the Critical View of Safety."
+      "watch": "Clips go only on the two structures shown in the Critical View of Safety; each clip fully closed before the cut.",
+      "common_errors": [
+        "Clipping or cutting before the Critical View of Safety was achieved.",
+        "A clip placed across a structure that was not identified, or too close to the common bile duct.",
+        "Cutting with a clip not fully closed or with tissue beyond the clip tip.",
+        "Using energy to divide the duct (thermal injury to the bile duct)."
+      ]
     },
     "GallbladderDissection": {
       "goal": "Detach the gallbladder from the liver bed along the cystic plate.",
+      "how": "Hook cautery on the plane between gallbladder wall and liver, with the gallbladder retracted to keep the plane under tension.",
+      "instruments": ["Hook", "Grasper", "Bipolar"],
       "next": "GallbladderPackaging",
-      "watch": "Staying on the gallbladder wall; bleeding from the liver bed."
+      "watch": "Staying on the gallbladder wall; bleeding from the liver bed; perforation of the gallbladder.",
+      "common_errors": [
+        "Entering the gallbladder (bile and stone spillage).",
+        "Dissecting into the liver (bleeding from the bed).",
+        "Thermal injury to the liver or neighbouring bowel."
+      ]
     },
     "GallbladderPackaging": {
       "goal": "Place the gallbladder in a specimen bag.",
+      "how": "Specimen bag introduced through a port; the gallbladder is dropped in and the bag closed.",
+      "instruments": ["SpecimenBag", "Grasper"],
       "next": "CleaningCoagulation",
-      "watch": "Spillage of bile or stones."
+      "watch": "Spillage of bile or stones.",
+      "common_errors": [
+        "Spilled stones left in the abdomen.",
+        "Tearing the specimen during bagging."
+      ]
     },
     "CleaningCoagulation": {
-      "goal": "Irrigate, suction and coagulate the liver bed; check clips and haemostasis.",
+      "goal": "Irrigate, suction and coagulate the liver bed; check the clips and haemostasis.",
+      "how": "Irrigator washes the bed and the triangle; bipolar or hook on bleeding points; a final look at the clipped stumps.",
+      "instruments": ["Irrigator", "Bipolar", "Hook", "Grasper"],
       "next": "GallbladderRetraction",
-      "watch": "Bleeding or bile leak from the liver bed or the clipped stumps."
+      "watch": "Bleeding or bile leak from the liver bed or the clipped stumps.",
+      "common_errors": [
+        "Missing a bile leak from the duct stump or the liver bed.",
+        "Coagulating near the bile duct or the duodenum."
+      ]
     },
     "GallbladderRetraction": {
-      "goal": "Remove the specimen bag through a port.",
+      "goal": "Remove the specimen bag through a port, remove the ports under vision and close.",
+      "how": "Bag pulled out through the umbilical or epigastric port; ports removed while watching for bleeding.",
+      "instruments": ["SpecimenBag", "Grasper"],
       "next": null,
-      "watch": "Port-site closure."
+      "watch": "Port-site bleeding; port-site closure.",
+      "common_errors": [
+        "Bag torn at the port with spillage.",
+        "Removing ports without watching the port site."
+      ]
     }
   },
   "cvs_criteria": {
@@ -53,6 +106,10 @@
       "event": "Clipper or scissors in view before the Critical View of Safety was seen on video",
       "why_it_matters": "Clipping or cutting before CVS is the deviation most associated with bile duct injury (Strasberg 1995; SAGES Safe Cholecystectomy).",
       "note": "Video-model observation, not a diagnosis. The surgeon may have confirmed CVS outside the camera view or the model may have missed it."
+    },
+    "energy_near_duct": {
+      "event": "Hook or bipolar close to the cystic duct or artery region on video",
+      "note": "Video-model observation. Energy near the bile duct is a recognised cause of thermal injury; the model cannot tell distance precisely."
     }
   }
 }

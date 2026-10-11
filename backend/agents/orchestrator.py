@@ -147,7 +147,7 @@ class Orchestrator:
     def on_reset(self) -> None:
         """reset, restart and scenario switch: cancel a running deliberation, clear agents/deliberation."""
         self._cancel_run()
-        self.store.update(agents={a: AgentSlot() for a in AGENT_ORDER}, deliberation=Deliberation(),
+        self.store.update(agents=self._merged_slots({a: AgentSlot() for a in AGENT_ORDER}), deliberation=Deliberation(),
                           metrics=self.store.state.metrics.model_copy(update={"deliberation_s": None}))
 
     async def join(self) -> None:
@@ -204,7 +204,12 @@ class Orchestrator:
         if not self._live(run):
             return
         run.slots[agent] = run.slots[agent].model_copy(update=fields)
-        self.store.update(agents=dict(run.slots))
+        self.store.update(agents=self._merged_slots(run.slots))
+
+    def _merged_slots(self, mine: dict[str, AgentSlot]) -> dict[str, AgentSlot]:
+        """Deliberation slots plus any other agent's slot (the procedure agent keeps its own)."""
+        others = {k: v for k, v in self.store.state.agents.items() if k not in AGENT_ORDER}
+        return {**others, **mine}
 
     def _set_delib(self, run: _Run, **fields: Any) -> None:
         if not self._live(run):

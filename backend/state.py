@@ -126,6 +126,28 @@ class AgentSlot(BaseModel):
     attempts: int = 0
 
 
+class ProcedureView(BaseModel):
+    """The procedure agent's latest validated reading of the live scene (agents/procedure.py).
+    Every field but `status`/`state` is model text that passed validation, or None. Nothing is
+    ever written in place of a failed reading: `reason` says why the last attempt failed."""
+    status: str = "idle: waits for live video"
+    state: Literal["idle", "thinking", "done", "unavailable"] = "idle"
+    doing: Optional[str] = None
+    intent: Optional[str] = None
+    next_name: Optional[str] = None
+    next_display: Optional[str] = None
+    watch: Optional[str] = None
+    concern: Optional[str] = None
+    confidence: Optional[str] = None
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    sees: list[dict[str, Any]] = Field(default_factory=list)
+    step_name: Optional[str] = None
+    at_s: Optional[float] = None
+    latency_ms: Optional[float] = None
+    turns: int = 0
+    reason: Optional[str] = None
+
+
 class Deliberation(BaseModel):
     """`outcome`, `team_question` and `summary` are decided by code (agents/convergence.py)."""
     status: str = AGENT_IDLE
@@ -245,6 +267,7 @@ class SentinelState(BaseModel):
     timeline: list[TimelineItem] = Field(default_factory=list)
     agents: dict[str, AgentSlot] = Field(default_factory=_default_agents)
     deliberation: Deliberation = Field(default_factory=Deliberation)
+    procedure: ProcedureView = Field(default_factory=ProcedureView)
     baseline: Baseline = Field(default_factory=Baseline)
     metrics: Metrics = Field(default_factory=Metrics)
     video: VideoInfo = Field(default_factory=VideoInfo)

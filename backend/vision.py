@@ -20,7 +20,7 @@ import cv2
 import httpx
 import numpy as np
 
-from .scene import ANATOMY_NAMES, LiveScene
+from .scene import ANATOMY_NAMES, LiveScene, compute_caution
 
 log = logging.getLogger("sentinel.vision")
 
@@ -52,6 +52,14 @@ def draw(frame: np.ndarray, res: dict[str, Any], scale: float) -> np.ndarray:
         x1, y1, x2, y2 = (int(v * scale) for v in d["box"])
         cv2.rectangle(out, (x1, y1), (x2, y2), TOOL_COLOR, 2, cv2.LINE_AA)
         cv2.putText(out, f"{d['cls']} {d['conf']:.2f}", (x1 + 3, max(14, y1 - 6)), font, 0.5, TOOL_COLOR, 1, cv2.LINE_AA)
+    c = res.get("caution")
+    if c:
+        h, w = out.shape[:2]
+        x1, y1, x2, y2 = c["box"][0] * w, c["box"][1] * h, c["box"][2] * w, c["box"][3] * h
+        centre = (int((x1 + x2) / 2), int((y1 + y2) / 2))
+        axes = (int((x2 - x1) / 2 + 18), int((y2 - y1) / 2 + 18))
+        cv2.ellipse(out, centre, axes, 0, 0, 360, (235, 235, 235), 2, cv2.LINE_AA)
+        cv2.putText(out, c["label"], (max(4, centre[0] - axes[0]), max(16, int(y1) - 24)), font, 0.5, (235, 235, 235), 1, cv2.LINE_AA)
     return out
 
 
@@ -143,6 +151,7 @@ class VisionClient:
                     log.warning("vision: %s", exc)
                     self._set_up(False, type(exc).__name__)
                     continue
+                res["caution"] = compute_caution(res, small.shape[1], small.shape[0])
                 self.scene.add(res, self.clock(), time.monotonic())
                 ok, jpg = cv2.imencode(".jpg", draw(frame, res, scale), params)
                 if ok:

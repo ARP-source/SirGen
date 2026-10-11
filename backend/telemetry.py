@@ -10,6 +10,7 @@ import asyncio
 import logging
 import os
 import time
+from collections.abc import Callable
 from typing import Optional, Protocol
 
 from .audit import AuditLog
@@ -86,6 +87,7 @@ class ScenarioPlayer:
         self._deviations_seen = 0
         self._event_seq = 0
         self.listener: Optional[EventListener] = None
+        self.reset_hooks: list[Callable[[], None]] = []  # e.g. the procedure agent's reset
         self.audit: Optional[AuditLog] = None  # attached by attach_audit(); None in unit tests
         self.gate = SpeechGate(log=self._log)
         self._logged_sources: set[str] = set()
@@ -216,6 +218,8 @@ class ScenarioPlayer:
         self.gate.reset()
         if self.scene is not None:
             self.scene.reset()
+        for hook in self.reset_hooks:
+            hook()
         self._deviations_seen = 0
         self.clock = 0.0
         self.playing = False

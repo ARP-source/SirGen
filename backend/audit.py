@@ -23,7 +23,8 @@ Kinds: session_start, run_start, control, alert, baseline_alarm, drug_given, nib
 phase_change, agent_message, agent_unavailable, deliberation_result, metrics_snapshot (the measured numbers at
 the end of each deliberation, for the pitch), voice_qa, segment_end, report_generated,
 speech_held, speech_released, speech_spoken, speech_urgent, video_event (what the vision models saw),
-deviation (an observed departure from the expected procedure), vision_status (vision service up/down).
+deviation (an observed departure from the expected procedure), vision_status (vision service up/down),
+procedure_reading (the procedure agent's validated reading of the live scene, or why it failed).
 """
 from __future__ import annotations
 
@@ -45,7 +46,7 @@ KINDS = (
     "phase_change", "agent_message", "agent_unavailable", "deliberation_result", "voice_qa",
     "segment_end", "report_generated", "metrics_snapshot",
     "speech_held", "speech_released", "speech_spoken", "speech_urgent",
-    "video_event", "deviation", "vision_status",
+    "video_event", "deviation", "vision_status", "procedure_reading",
 )
 
 

@@ -187,7 +187,8 @@ export interface SentinelState {
   drug_log: DrugEntry[]
   event: SentinelEvent | null
   timeline: TimelineItem[]
-  agents: Record<'surgical' | 'anesthesia' | 'record', AgentSlot>
+  agents: Record<'surgical' | 'anesthesia' | 'record', AgentSlot> & Record<string, AgentSlot | undefined>
+  procedure: ProcedureView
   deliberation: {
     status: string
     round: number
@@ -280,9 +281,40 @@ export interface SceneEvent {
   data: Record<string, unknown>
 }
 
+export interface Caution {
+  tool: string
+  structure: string
+  structure_name: string
+  kind: 'cutting' | 'energy' | string
+  box: [number, number, number, number]
+  gap: number
+  label: string
+}
+
+/** The procedure agent's latest validated reading (backend/agents/procedure.py). */
+export interface ProcedureView {
+  status: string
+  state: 'idle' | 'thinking' | 'done' | 'unavailable'
+  doing: string | null
+  intent: string | null
+  next_name: string | null
+  next_display: string | null
+  watch: string | null
+  concern: string | null
+  confidence: string | null
+  evidence: Array<{ source_id: string; note: string }>
+  sees: Array<{ source_id: string | null; text: string }>
+  step_name: string | null
+  at_s: number | null
+  latency_ms: number | null
+  turns: number
+  reason: string | null
+}
+
 export interface SceneView {
   status: 'live' | 'stale' | 'unavailable' | 'not running' | string
   note: string
+  caution: Caution | null
   detector_ms: number | null
   detector_fps: number | null
   last_frame_id: number | null

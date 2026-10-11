@@ -22,7 +22,9 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from . import report as report_module
 from .agents.llm_client import LightningClient
 from .agents.orchestrator import Orchestrator
+from .agents.procedure import ProcedureAgent
 from . import omni as omni_module
+from . import voice as voice_module
 from .audit import AuditLog
 from .metrics import BytesOutCounter, read_mem_used_gb
 from .phase import PhaseRules
@@ -62,6 +64,11 @@ class Services:
     reports: dict[int, report_module.Report]
     report_lock: asyncio.Lock
     vision: Optional[vision_module.VisionClient] = None
+    procedure: Optional[ProcedureAgent] = None
+
+
+def procedure_enabled() -> bool:
+    return os.environ.get("SENTINEL_PROCEDURE_AGENT", "1") not in ("0", "false", "off")
 
 
 async def metrics_loop(svc: Services, period_s: float = 1.0) -> None:
@@ -125,14 +132,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                   "audit_file": str(audit.path)}, clock_s=0.0, scenario_id=player.scenario.id)
     orchestrator.audit = audit
     audit_ref["audit"] = audit
+    prompts_dir = Path(os.environ.get("SENTINEL_PROMPTS", REPO_DIR / "prompts"))
+    procedure = ProcedureAgent(store, player, scene, steps, LightningClient(), (prompts_dir / "procedure.md").read_text(encoding="utf-8"),
+                               audit=audit)
+    player.reset_hooks.append(procedure.reset)
     player.attach_audit(audit)
     svc = Services(store=store, player=player, video=video, bytes_out=BytesOutCounter(),
                    phase_rules=PhaseRules.load(phase_path), orchestrator=orchestrator,
                    patient=patient, started=time.monotonic(), audit=audit,
                    report_client=LightningClient(timeout_s=REPORT_TIMEOUT_S),
-                   report_prompt=(Path(os.environ.get("SENTINEL_PROMPTS", REPO_DIR / "prompts")) / "report.md").read_text(encoding="utf-8"),
+                   report_prompt=(prompts_dir / "report.md").read_text(encoding="utf-8"),
                    reports={}, report_lock=asyncio.Lock())
     svc.vision = vision_client
+    svc.procedure = procedure
     app.state.svc = svc
     if vision_client is not None:
         vision_client.start()
@@ -141,6 +153,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
              asyncio.create_task(player.run(), name="telemetry"),
              asyncio.create_task(metrics_loop(svc), name="metrics"),
              asyncio.create_task(phase_watch(svc), name="phase-audit")]
+    if procedure_enabled():
+        tasks.append(asyncio.create_task(procedure.run(), name="procedure-agent"))
     log.info("started: scenarios=%s data=%s lightning=%s model=%s timeout=%gs", ",".join(scenarios), DATA_DIR,
              client.base_url, client.model or "(first id from /models)", client.timeout_s)
     try:
@@ -152,6 +166,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             with contextlib.suppress(asyncio.CancelledError):
                 await t
         await orchestrator.aclose()
+        await procedure.client.aclose()
         await svc.report_client.aclose()
         audit.close()
         video.stop()
@@ -159,7 +174,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             vision_client.stop()
 
 
-app = FastAPI(title="Sentinel-OR", version="0.4.0-m4a", lifespan=lifespan)
+app = FastAPI(title="Sentinel-OR", version="0.5.0-m5", lifespan=lifespan)
+if getattr(voice_module, "router", None) is not None:  # TTS/STT endpoints once backend/voice.py provides them
+    app.include_router(voice_module.router)
 
 
 def services(request: Request | WebSocket) -> Services:

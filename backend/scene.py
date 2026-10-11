@@ -70,8 +70,56 @@ class StepInfo(BaseModel):
     basis: str = "phase heuristic over detected instruments (data/procedure/phase_rules.json)"
 
 
+class Caution(BaseModel):
+    """A cutting or energy instrument close to the detected cystic duct or artery, on one frame.
+    `box` is the structure's box in frame fractions (x1, y1, x2, y2). An AI estimate, not a measurement."""
+    tool: str
+    structure: str
+    structure_name: str
+    kind: str  # cutting | energy
+    box: list[float]
+    gap: float
+    label: str
+
+
+CAUTION_TOOLS = {"Clipper": "cutting", "Scissors": "cutting", "Hook": "energy", "Bipolar": "energy"}
+CAUTION_STRUCTURES = ("cystic_duct", "cystic_artery")
+CAUTION_GAP_FRAC = 0.06
+CAUTION_HOLD_S = 1.5
+CAUTION_EVENT_GAP_S = 20.0
+
+
+def _box_gap(a: list[float], b: list[float]) -> float:
+    dx = max(0.0, max(a[0], b[0]) - min(a[2], b[2]))
+    dy = max(0.0, max(a[1], b[1]) - min(a[3], b[3]))
+    return (dx * dx + dy * dy) ** 0.5
+
+
+def compute_caution(res: dict[str, Any], width: int, height: int) -> Optional[dict[str, Any]]:
+    """Closest (tool, structure) pair that is touching or within CAUTION_GAP_FRAC of the frame width."""
+    tools = [d for d in (res.get("tools") or []) if d["cls"] in CAUTION_TOOLS]
+    structs = [d for d in (res.get("anatomy") or []) if d["cls"] in CAUTION_STRUCTURES]
+    if not tools or not structs or width <= 0 or height <= 0:
+        return None
+    best: Optional[tuple[float, dict[str, Any], dict[str, Any]]] = None
+    for t in tools:
+        for s in structs:
+            gap = _box_gap(t["box"], s["box"]) / width
+            if gap <= CAUTION_GAP_FRAC and (best is None or gap < best[0]):
+                best = (gap, t, s)
+    if best is None:
+        return None
+    gap, t, s = best
+    name = ANATOMY_NAMES.get(s["cls"], s["cls"])
+    x1, y1, x2, y2 = s["box"]
+    return {"tool": t["cls"], "structure": s["cls"], "structure_name": name, "kind": CAUTION_TOOLS[t["cls"]],
+            "box": [round(x1 / width, 4), round(y1 / height, 4), round(x2 / width, 4), round(y2 / height, 4)],
+            "gap": round(gap, 4), "label": f"caution · {t['cls'].lower()} near likely {name} (AI estimate)"}
+
+
 class SceneView(BaseModel):
     status: str = "not running"  # live | stale | unavailable | not running
+    caution: Optional[Caution] = None
     note: str = "vision service not connected"
     detector_ms: Optional[float] = None
     detector_fps: Optional[float] = None
@@ -128,6 +176,10 @@ class LiveScene:
         self._cut_streak = 0
         self._first_cut_at: Optional[float] = None
         self._oop_announced: set[tuple[str, str]] = set()
+        self._tools_hist: deque[tuple[int, frozenset[str]]] = deque(maxlen=60)
+        self._caution: Optional[tuple[float, dict[str, Any]]] = None
+        self._caution_s: Optional[dict[str, Any]] = None
+        self._caution_last_event: dict[str, float] = {}
         self.events: list[SceneEvent] = []
         self.deviations: list[SceneEvent] = []
         self._seq = 0
@@ -141,6 +193,9 @@ class LiveScene:
             self._last_at = wall
             self._last_ms = result.get("ms")
             self._last_frame = result.get("frame_id")
+            if result.get("caution"):
+                self._caution = (wall, result["caution"])
+                self._caution_s = result["caution"]
 
     def set_service(self, models: dict[str, Any], note: str) -> None:
         self.models, self.service_note = models, note
@@ -176,6 +231,7 @@ class LiveScene:
             arrivals = [w for w in self._arrivals if now - w <= 2.0]
             last_ms, last_frame = self._last_ms, self._last_frame
             last_tools = [r for _, r in list(self._recent)[-1:]]
+            caution = self._caution[1] if live and self._caution and now - self._caution[0] <= CAUTION_HOLD_S else None
         if live:
             status, note = "live", "vision models running on this machine"
         elif self._last_at is not None:
@@ -188,7 +244,8 @@ class LiveScene:
         cvs = [CvsCriterion(name=c, text=crit.get(c, c), p=round(self._cvs_ema[c], 3) if c in self._cvs_ema else None,
                             threshold=self._cvs_thr.get(c), met=c in self._cvs_ema and self._cvs_ema[c] >= self._cvs_thr.get(c, 0.5))
                for c in crit]
-        return SceneView(status=status, note=note, detector_ms=last_ms if live else None,
+        return SceneView(status=status, note=note, caution=Caution(**caution) if caution else None,
+                         detector_ms=last_ms if live else None,
                          detector_fps=round(len(arrivals) / 2.0, 1) if live else None, last_frame_id=last_frame,
                          tools=tools, anatomy=anatomy, cvs=cvs, cvs_available=bool(self._cvs_ema),
                          cvs_achieved=self.cvs_seen_at is not None, cvs_seen_at_s=self.cvs_seen_at,
@@ -197,6 +254,18 @@ class LiveScene:
 
     def visible_events(self, now_s: float) -> list[SceneEvent]:
         return [e for e in self.events if e.t_s <= now_s]
+
+    def tools_seconds(self, window_s: int = 30) -> dict[str, int]:
+        """Seconds each instrument was present in the last `window_s` processed seconds."""
+        hist = list(self._tools_hist)[-window_s:]
+        out: dict[str, int] = {}
+        for _, tools in hist:
+            for tool in tools:
+                out[tool] = out.get(tool, 0) + 1
+        return dict(sorted(out.items(), key=lambda kv: -kv[1]))
+
+    def anatomy_now(self) -> list[str]:
+        return sorted(a for a in self._anat_s if a not in ("tool", "gallbladder"))
 
     def event(self, source_id: str) -> Optional[SceneEvent]:
         return next((e for e in self.events if e.source_id == source_id), None)
@@ -220,6 +289,16 @@ class LiveScene:
         tools = _present(batch, "tools", n)
         anat = _present(batch, "anatomy", n)
         self._tools_s, self._anat_s = tools, anat
+        self._tools_hist.append((s, frozenset(tools)))
+        cautions = [r["caution"] for r in batch if r.get("caution")]
+        if len(cautions) >= max(2, n // 3):  # sustained within the second, not one noisy frame
+            c = cautions[-1]
+            key = f"{c['kind']}:{c['structure']}"
+            if t - self._caution_last_event.get(key, -1e9) >= CAUTION_EVENT_GAP_S:
+                self._caution_last_event[key] = t
+                self._emit("caution", t, f"{c['tool']} close to the detected {c['structure_name']} on video",
+                           sorted(tools), {"tool": c["tool"], "structure": c["structure"], "caution_kind": c["kind"],
+                                           "note": "AI estimate from two detectors; distance on screen only."})
         for r in batch:
             self._cvs_step(r.get("cvs"))
 
